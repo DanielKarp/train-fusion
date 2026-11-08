@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+"""Print GTFS-RT protobuf files in human-readable form.
+
+usage: pbcat [--json] FILE.pb [FILE.pb ...]
+
+Text format by default; --json emits one JSON document per file (pipe to jq).
+Timestamps are raw POSIX seconds, as in the feed.
+"""
+import sys
+
+from google.protobuf import text_format
+from google.protobuf.json_format import MessageToJson
+from google.transit import gtfs_realtime_pb2 as g
+
+
+def main():
+    args = sys.argv[1:]
+    as_json = "--json" in args
+    files = [a for a in args if a != "--json"]
+    if not files or "-h" in files or "--help" in files:
+        sys.exit(__doc__)
+    for path in files:
+        m = g.FeedMessage()
+        with open(path, "rb") as f:
+            m.ParseFromString(f.read())
+        if as_json:
+            print(MessageToJson(m, indent=None))
+        else:
+            if len(files) > 1:
+                print(f"# {path}")
+            print(text_format.MessageToString(m), end="")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except BrokenPipeError:  # e.g. piping into head
+        pass
