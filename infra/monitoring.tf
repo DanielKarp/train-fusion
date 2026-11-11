@@ -74,7 +74,7 @@ resource "google_monitoring_alert_policy" "feed_failing" {
       filter          = "resource.type = \"global\" AND metric.type = \"${local.fetches_metric}\""
       comparison      = "COMPARISON_LT"
       threshold_value = 10
-      duration        = "0s"
+      duration        = "300s" # must be nonzero with evaluation_missing_data
       aggregations {
         alignment_period     = "900s"
         per_series_aligner   = "ALIGN_DELTA"
