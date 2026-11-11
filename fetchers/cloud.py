@@ -32,7 +32,9 @@ from fetchers.archive import INSTANCE, LOG_DIR, log_minute
 UPLOAD_EVERY_S = 30.0
 KEEP_LOCAL_S = 2 * 3600.0   # > the rate limiter's 1 h window
 SEGMENT_GRACE_S = 60.0      # a segment is finished this long after its minute ends
-LEGACY_QUIET_S = 600.0      # migrate: a legacy fetch_log.jsonl must be untouched this long
+# migrate: a legacy fetch_log.jsonl must be untouched this long. A running fetcher appends
+# to it at least once a minute (each feed fetches every 60 s), so this means it's stopped.
+LEGACY_QUIET_S = 120.0
 METRIC = "custom.googleapis.com/train_fusion/fetches"
 
 
@@ -180,8 +182,9 @@ def main() -> None:
     # it must be stopped first. (The gtfs one only changes daily, so this can't catch it.)
     skipped = [p for p in (a.data_dir / "rt").glob("*/fetch_log.jsonl") if not up.finished(p, True)]
     if skipped:
-        sys.exit(f"{[str(p) for p in skipped]} changed in the last {LEGACY_QUIET_S:.0f} s: "
-                 "stop the old fetcher first")
+        wait = max(LEGACY_QUIET_S - (time.time() - p.stat().st_mtime) for p in skipped)
+        sys.exit(f"{[str(p) for p in skipped]} changed in the last {LEGACY_QUIET_S:.0f} s, so the "
+                 f"old fetcher may still be running. If it's stopped, retry in {wait:.0f} s.")
     n = up.upload_pass(final=True)
     print(f"uploaded {n} new files")
 
