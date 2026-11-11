@@ -7,7 +7,9 @@ the `schemas.py` of the stage that writes it.
 
 - **Stages are plain functions from tables to tables.** No orchestration framework.
 - **Derived data is disposable.** Everything under `data/derived/` is rebuilt from the raw
-  archive (`data/rt`, `data/gtfs`) and the hand-maintained inputs in the repo.
+  archive (`data/rt`, `data/gtfs`: a local copy of the GCS bucket, updated only when you run
+  `just sync`, see [deploy.md](deploy.md)) and the hand-maintained inputs in the repo.
+  Builds never sync, so you iterate on a fixed snapshot until you choose to update it.
 - **Schemas live with their stage.** Each stage is a directory
   `train_fusion/stages/<stage>/` with its code (`stage.py`) and the tables it writes
   (`schemas.py`, plain Python, via `train_fusion/common/schema_dsl.py`), which give the polars

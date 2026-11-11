@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """Summarize archived GTFS-RT snapshots: freshness, update cadence, content changes.
 
-usage: python inspect_rt.py data/rt/<service_date> [--verbose]
+usage: python -m fetchers.gtfs.inspect_rt data/rt/<service_date> [--verbose]
 """
 
-import json
 import sys
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
 from google.transit import gtfs_realtime_pb2 as g
+
+from fetchers.archive import read_log
 
 
 def load(path: Path):
@@ -39,7 +40,7 @@ def content_key(m):
 def main():
     day = Path(sys.argv[1])
     verbose = "--verbose" in sys.argv
-    log = [json.loads(l) for l in (day / "fetch_log.jsonl").read_text().splitlines()]
+    log = read_log(day)
     by_file = {r["file"]: r for r in log if r["file"]}
     for feed in ("tripupdates", "vehiclepositions"):
         files = sorted((day / feed).glob("*.pb"))
