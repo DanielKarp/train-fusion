@@ -12,6 +12,8 @@ from train_fusion.common.timeutil import TZ, service_day_origin
 from train_fusion.stages.decode.schemas import FETCHES
 from train_fusion.stages.static.stage import DAYS, Static
 from train_fusion.stages.timetable import stage as timetable_stage
+from train_fusion.common.schema_dsl import Table
+from train_fusion.stages.tu_checks.schemas import TU_H1, TU_KEPT, TU_LISTED
 
 
 def _static() -> Static:
@@ -253,6 +255,20 @@ def data_presence() -> pl.DataFrame:
     return pl.DataFrame(rows, schema=STATUS_SCHEMA)
 
 
+def _tu_check(table: Table, at: str) -> pl.DataFrame:
+    """One of stage tu_checks' tables on every built date, plus at_epoch (its column `at`: when
+    a case is drawn on the Pipeline health page) and at_s (that in seconds after the
+    service-day origin, to line days up)."""
+    parts = []
+    for d in paths.built_dates():
+        p = paths.day_dir(d) / f"{table.name}.parquet"
+        if not p.exists():
+            raise SystemExit(f"{d} has no {table.name}: run `just build` again")
+        parts.append(table.read(p).with_columns(pl.col(at).alias("at_epoch"),
+                                                (pl.col(at) - service_day_origin(d)).alias("at_s")))
+    return pl.concat(parts)
+
+
 # what web/explorer/src/data/[table].parquet.py serves, as data/<name>.parquet
 TABLES = {
     "trips": lambda: _static().trips,
@@ -266,4 +282,7 @@ TABLES = {
     "timetable": timetable,
     "fetch_status": fetch_status,
     "data_presence": data_presence,
+    "tu_h1": lambda: _tu_check(TU_H1, "t_epoch"),
+    "tu_listed": lambda: _tu_check(TU_LISTED, "first_missing_epoch"),
+    "tu_kept": lambda: _tu_check(TU_KEPT, "t_epoch"),
 }
