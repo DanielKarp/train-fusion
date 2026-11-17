@@ -1,7 +1,8 @@
 # The phone recorder (`ios/`)
 
 A one-screen iPhone app for recording a train ride from the inside: audio (to hear the
-door chimes and the traction motors) plus raw accelerometer and gyroscope samples, all
+door chimes and the traction motors) plus raw accelerometer, gyroscope and magnetometer
+samples and the barometer, all
 with timestamps that convert to exact clock time. One button starts and stops a recording;
 each recording in the list can be uploaded to `gs://train-fusion-recordings` or deleted.
 Recording carries on with the app in the background and the phone locked.
@@ -36,8 +37,29 @@ the start time in UTC, e.g. `20261115T181502Z`.
 | `audio_timing.csv.gz` | `segment,frame,frames,uptime_s`: one row per captured buffer (~0.1 s): frame `frame` of `audio_<segment>.m4a` was captured at `uptime_s` |
 | `accel.csv.gz` | `uptime_s,x_g,y_g,z_g`: raw accelerometer, 100 Hz, in g (gravity included) |
 | `gyro.csv.gz` | `uptime_s,x_rad_s,y_rad_s,z_rad_s`: raw gyroscope, 100 Hz |
+| `mag.csv.gz` | `uptime_s,x_ut,y_ut,z_ut`: raw magnetometer, 100 Hz, in µT. Uncalibrated: the earth's field plus the phone's own bias and anything magnetic nearby |
+| `baro.csv.gz` | `uptime_s,pressure_kpa,relative_altitude_m`: barometer, about 1 Hz. The altitude is iOS's, relative to the start of the recording. Empty if "Motion & Fitness" access was refused |
+| `device_motion.csv.gz` | iOS's own fusion of the motion sensors, 100 Hz (below) |
 | `clock.csv` | `uptime_s,unix_s,ntp_offset_s,ntp_round_trip_s`: how uptime maps to clock time (below) |
 | `meta.json` | device, app version, start/end, audio format and input, sample counts. Uploaded last: if it's in the bucket, everything is |
+
+`device_motion.csv.gz` is what iOS itself makes of the motion sensors (`CMDeviceMotion`).
+It isn't just a function of the raw files: iOS has been estimating the gyroscope's and the
+magnetometer's biases since long before the recording started, which a recording of a phone
+lying still can't reproduce. Columns after `uptime_s`:
+
+- `qx,qy,qz,qw`: the attitude quaternion as `CMAttitude` reports it, relative to the frame
+  named in `meta.json` (`motion.device_motion_reference_frame`; normally
+  `xMagneticNorthZVertical`: x to magnetic north, z up). Check the rotation's direction
+  against the gravity columns before relying on it;
+- `rot_*_rad_s`: rotation rate with the gyro bias removed;
+- `gravity_*_g`, `user_accel_*_g`: the accelerometer reading split into gravity and the rest;
+- `mag_*_ut`, `mag_accuracy`: the magnetic field with the phone's own bias removed, and how
+  good iOS thinks that calibration is (-1 uncalibrated, 0 low, 1 medium, 2 high);
+- `heading_deg`: compass heading of the phone's y axis, 0–360 from magnetic north.
+
+On a train the steel and the traction currents disturb the magnetic field, so heading and
+the attitude's yaw can be off; `mag_accuracy` is the hint.
 
 Axes are the phone's (x right, y up, z out of the screen), so they depend on how the
 phone is lying.
