@@ -1,8 +1,10 @@
-# Recordings from the phone app (ios/): audio + accelerometer + gyroscope, one prefix per
-# recording. A separate bucket from the archive because the app's credential lives on a
-# phone: the `recorder` service account can create objects under raw/ here and do nothing
-# else anywhere (not read, not replace, not delete). The rest of the bucket (labels/) is
-# written from a laptop, with your own credentials (`just sync-recordings`).
+# Recordings from the phone app (ios/): audio + motion sensors, one prefix per upload,
+# raw/<recording id>-<8 random hex>/. The app holds no credential: the recorder API
+# (api.tf) hands it signed URLs, each creating one object under raw/ at a declared size
+# (never replacing one), and the API's service account can do no more here than that and
+# list names and sizes. (Older builds upload with the `recorder` service account's key,
+# below.) The rest of the bucket (labels/) is written from a laptop, with your own
+# credentials (`just sync-recordings`).
 resource "google_storage_bucket" "recordings" {
   name                        = var.recordings_bucket
   location                    = upper(var.region)
@@ -21,7 +23,11 @@ resource "google_storage_bucket" "recordings" {
   depends_on = [google_project_service.api]
 }
 
-# Its key is made with `just ios-key` (not by terraform, so it never enters the state).
+# For older builds of the app, from before the recorder API: they bundle a key for this
+# account (made with `gcloud iam service-accounts keys create`, so never in terraform's
+# state) and upload to raw/<recording id>/ with it. It can create objects under raw/ here
+# and do nothing else anywhere (not read, not replace, not delete). Kept while phones may
+# still run those builds; removing these two resources (and the output) cuts them off.
 resource "google_service_account" "recorder" {
   account_id   = "recorder"
   display_name = "train-fusion phone recorder (upload only)"
