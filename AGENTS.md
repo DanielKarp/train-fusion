@@ -73,6 +73,8 @@ In files git sees:
   `data/recordings/labels/RIDES.md`; add to it when a ride gets labelled.
 - **No quotes from transcripts**, of announcements or of people.
 - **No figures made from a recording.** Say which command draws it instead.
+- **No crash reports from the Android app as they are** (`android/README.md`): their file
+  paths can name a recording. Take the ids out first.
 - Only `phone-sensor-fusion/params/all.json` is checked in: it is fitted on every ride
   and names none.
 

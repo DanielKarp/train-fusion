@@ -6,9 +6,12 @@ online model, the same consent questions, accounts, uploads and settings, agains
 backend ([docs/api.md](../docs/api.md)). Where Android can't do what iOS does, or does it
 differently, it's listed under [Differences from the iOS app](#differences-from-the-ios-app).
 
-**Status:** it builds, its tests pass, and its screens render as intended (below), but it
-hasn't been run on a phone yet. [First things to check on a phone](#first-things-to-check-on-a-phone)
-lists what only a phone can tell.
+**Status:** tried on one phone so far. The first test build (version code 1) recorded, but
+crashed when a recording was stopped, leaving it "not stopped properly"; version code 2
+fixes that. The rest of [First things to check on a phone](#first-things-to-check-on-a-phone)
+is still to be confirmed on a phone. On a laptop it builds, its tests pass (including a
+whole recording, start to stop, with stand-ins for the microphone and encoder), and its
+screens render as intended ([Tests](#tests)).
 
 ## Layout
 
@@ -50,6 +53,30 @@ bin/android-config           # from android/, once the backend is deployed: conf
 Without `config.properties` the app records and replays as usual but can't upload or sign in.
 With only the API's host in it (`API_HOST=…`), it uploads and shares Train Measurements
 without accounts; signing in also needs the settings below.
+
+### Test builds for others
+
+A tester needs an APK (the Play bundle below doesn't install by itself):
+
+```sh
+./gradlew :app:assembleRelease   # app/build/outputs/apk/release/app-release.apk, about 4 MB
+```
+
+- Without `keystore.properties` it's signed with this computer's debug key: it installs
+  over earlier test builds made on the same computer, but not over one signed elsewhere
+  (that has to be uninstalled first, which deletes its recordings and device secret).
+- Raise `versionCode` in `app/build.gradle.kts` for every build you hand out. Recordings and
+  shared Train Measurements carry it (`app_version`, e.g. `0.1-android (2)`), so a problem
+  can be traced to its build.
+- Keep that build's `app/build/outputs/mapping/release/mapping.txt`: the release build
+  shortens names, and its crash reports need the mapping to be read
+  ([When it crashes](#when-it-crashes)). Building the same commit with the same
+  `config.properties` gives the same mapping again.
+- `./gradlew :app:assembleDebug` makes an unshrunk APK (about 65 MB) whose crash reports
+  read as they are.
+
+To install, open the APK on the phone (letting the browser or file manager install unknown
+apps), or `adb install -r app-release.apk`.
 
 ### Setting up the backend for Android
 
@@ -103,7 +130,7 @@ Then `bin/android-config` and rebuild.
 
 ### Release builds
 
-`./gradlew :app:bundleRelease` (minified). Signed with the key that
+For Google Play, `./gradlew :app:bundleRelease` (an .aab, minified). Signed with the key that
 `keystore.properties` (gitignored) names (`storeFile`, `storePassword`, `keyAlias`,
 `keyPassword`); without one, with the debug key, which is for testing only. The release
 key's SHA-1 goes into the API key and the Android OAuth client (above). For Google Play,
@@ -150,7 +177,9 @@ What can't be replicated cleanly, and what the Android app does instead:
 - **Calls and other apps taking the microphone.** iOS stops the recording's audio and
   starts a new segment afterwards. Android keeps recording and hands the app silence
   instead; the silence is kept (time stays continuous) and listed in `meta.json`
-  (`audio.silenced`). A new segment starts only if capture actually fails.
+  (`audio.silenced`). A new segment starts only if capture itself fails (an error from the
+  microphone or the encoder): the segment is closed, the error shown on the Measure
+  screen, and capture started again, as on iOS.
 - **The phone's gyroscope may be quieter than an iPhone's.** The model tells a resting
   phone by the gyroscope's level, fitted on an iPhone whose raw gyroscope carries a bias of
   about 0.008 rad/s. The app records Android's *uncalibrated* gyroscope (bias in, the
@@ -189,7 +218,9 @@ What can't be replicated cleanly, and what the Android app does instead:
 - **Smaller things:** the testing launch arguments are intent extras
   (`adb shell am start … --es autoreplay <id> --es replayspeed max --ez dump true`); a
   privacy manifest has no Android equivalent (Play's Data safety form is filled in on the
-  console); `app_version` is `0.1-android (1)`, so shared data says which app made it.
+  console); `app_version` is `0.1-android (<version code>)`, so shared data says which app,
+  and which build, made it; crashes are written to a file for testers
+  ([When it crashes](#when-it-crashes)), where the iOS app relies on Apple's crash logs.
 
 ## A recording made on Android
 
@@ -241,8 +272,18 @@ written so the Python pipeline reads them unchanged:
   python android/tools/fake_backend.py 8765 &
   TRAIN_FUSION_TEST_BACKEND=http://127.0.0.1:8765 ./gradlew :core:test
   ```
-- `app`: the Measure cards, the consent questions, History and Settings rendered on the JVM
-  (Robolectric) from made-up beliefs and rides into `app/build/screenshots/`.
+- `app` (Robolectric, on the JVM):
+  - a whole recording, start to stop, through the real `Recorder`, `AudioCapture`,
+    `MotionCapture` and `ClockLog`, with Robolectric's stand-ins for the microphone and the
+    AAC encoder: the files are there, `meta.json` is complete, the ride and the upload
+    question follow (`RecorderTest`; on version code 1's code it fails where that build
+    crashed, `meta.json` asking the encoder for its name);
+  - the Measure cards, the consent questions, History and Settings rendered from made-up
+    beliefs and rides into `app/build/screenshots/`, to look at.
+
+  The first run downloads Robolectric's Android jars (about 200 MB) from Maven Central.
+  Where that's blocked, download `android-all-instrumented` by hand and point
+  `ROBOLECTRIC_DEPENDENCY_DIR` at the folder it's in.
 
 ### Checking the model's port
 
@@ -254,13 +295,29 @@ written so the Python pipeline reads them unchanged:
   `python -m app.export`) compares features, speeds, legs and stations as for the iOS app.
 - On a phone: `tools/replay-on-device` (the Android `bin/ios-sim-replay`).
 
+## When it crashes
+
+The app writes each crash's stack trace, with the app version, the phone and its Android
+version, to `crashes/<time>.txt`: on a computer over USB,
+`Android/data/io.github.danielkarp.trainfusion/files/crashes/`. Then Android's usual "app has
+stopped". (`adb logcat` has the same, if the phone is plugged in.)
+
+A report from a release build has shortened names. That build's mapping restores them:
+
+```sh
+$ANDROID_HOME/cmdline-tools/latest/bin/retrace mapping.txt crash.txt
+```
+
+A report can name a recording (its id is in file paths), so keep reports out of git, as
+recordings are ([AGENTS.md](../AGENTS.md)).
+
 ## First things to check on a phone
 
-None of this could be tried without one:
+What only a phone can tell (`crashes/` should stay empty throughout):
 
 1. A recording starts, keeps going with the screen off and the app in the background, and
    stops from the app and from the notification, leaving every file (`gzip -t`, the m4a
-   plays, `meta.json` complete).
+   plays, `meta.json` complete). (Version code 1 crashed at the stop; check version 2 doesn't.)
 2. The sensors: `motion.timestamp_clocks` all `boottime`; sample counts / duration near
    100 Hz (or what the phone delivers); `accel` z ≈ −1 lying face up; `device_motion`'s
    heading against a compass app.
