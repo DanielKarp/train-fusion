@@ -178,44 +178,52 @@ class AudioCapture(private val context: Context, private val dir: File) {
                 null
             } ?: continue
             record = r
-            val segment = newSegment()
-            var framesInRecord = 0L
-            while (running) {
-                val n = r.read(buf, 0, buf.size, AudioRecord.READ_BLOCKING)
-                if (n < 0) {
-                    setError("audio stopped (error $n)")
-                    break  // start again, as a new segment
+            // Anything going wrong here is handled like losing the microphone: said, the segment
+            // closed, capture started again as a new one. (An exception escaping this thread
+            // would end the whole app, and the recording with it.)
+            var segment: Segment? = null
+            try {
+                val seg = newSegment().also { segment = it }
+                var framesInRecord = 0L
+                while (running) {
+                    val n = r.read(buf, 0, buf.size, AudioRecord.READ_BLOCKING)
+                    if (n < 0) {
+                        setError("audio stopped (error $n)")
+                        break  // start again, as a new segment
+                    }
+                    if (n == 0) continue
+                    val arrived = AndroidClock.uptime()
+                    // when the buffer's first frame was captured: from AudioRecord's own timestamp
+                    // (BOOTTIME, the uptime clock), else from when the buffer arrived
+                    var uptime: Double? = null
+                    if (r.getTimestamp(ts, AudioTimestamp.TIMEBASE_BOOTTIME) == AudioRecord.SUCCESS) {
+                        val t = ts.nanoTime / 1e9 + (framesInRecord - ts.framePosition).toDouble() / SAMPLE_RATE
+                        if (abs(t - (arrived - n.toDouble() / SAMPLE_RATE)) < 1.0) uptime = t
+                    }
+                    synchronized(lock) { if (uptime != null) stamped++ else estimated++ }
+                    if (uptime == null) uptime = arrived - n.toDouble() / SAMPLE_RATE
+                    seg.encoder.encode(buf, 0, n)
+                    synchronized(lock) {
+                        val index = segments.size - 1
+                        timing?.write("$index,${seg.frames},$n,${"%.6f".format(java.util.Locale.US, uptime)}\n")
+                        if (seg.frames == 0L) seg.firstUptime = uptime
+                        seg.frames += n
+                        if (firstBufferLatency == null) firstBufferLatency = arrived - uptime
+                        lastBufferUptime = arrived
+                        lastError = null
+                    }
+                    try {
+                        onBuffer?.invoke(buf, n, uptime)
+                    } catch (_: Exception) {
+                        // the model's problem, not the recording's
+                    }
+                    framesInRecord += n
                 }
-                if (n == 0) continue
-                val arrived = AndroidClock.uptime()
-                // when the buffer's first frame was captured: from AudioRecord's own timestamp
-                // (BOOTTIME, the uptime clock), else from when the buffer arrived
-                var uptime: Double? = null
-                if (r.getTimestamp(ts, AudioTimestamp.TIMEBASE_BOOTTIME) == AudioRecord.SUCCESS) {
-                    val t = ts.nanoTime / 1e9 + (framesInRecord - ts.framePosition).toDouble() / SAMPLE_RATE
-                    if (abs(t - (arrived - n.toDouble() / SAMPLE_RATE)) < 1.0) uptime = t
-                }
-                synchronized(lock) { if (uptime != null) stamped++ else estimated++ }
-                if (uptime == null) uptime = arrived - n.toDouble() / SAMPLE_RATE
-                try {
-                    segment.encoder.encode(buf, 0, n)
-                } catch (e: Exception) {
-                    setError("audio write failed: ${e.message}")
-                    break
-                }
-                synchronized(lock) {
-                    val index = segments.size - 1
-                    timing?.write("$index,${segment.frames},$n,${"%.6f".format(java.util.Locale.US, uptime)}\n")
-                    if (segment.frames == 0L) segment.firstUptime = uptime
-                    segment.frames += n
-                    if (firstBufferLatency == null) firstBufferLatency = arrived - uptime
-                    lastBufferUptime = arrived
-                    lastError = null
-                }
-                onBuffer?.invoke(buf, n, uptime)
-                framesInRecord += n
+            } catch (e: Exception) {
+                setError("audio stopped: ${e.message ?: e.javaClass.simpleName}")
+                if (running) sleepWhileRunning(1000)
             }
-            closeSegment(segment)
+            segment?.let { closeSegment(it) }
             try { r.stop() } catch (_: Exception) {}
             r.release()
             record = null

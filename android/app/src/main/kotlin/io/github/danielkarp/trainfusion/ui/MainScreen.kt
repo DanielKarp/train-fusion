@@ -208,7 +208,7 @@ private fun TrackScreen(app: TrainFusionApp, args: LaunchArgs) {
 
     // the microphone (and, on Android 13+, notifications: the one saying it's recording) before the first recording
     val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-        scope.launch {
+        app.scope.launch {  // (not the screen's scope: leaving the screen mustn't cancel it half way)
             recorder.start()
             // the first recording: ask while it runs (the answer applies when it ends)
             if (recorder.isRecording && !app.settings.askedShareMeasurements) askingShare = true
@@ -220,7 +220,7 @@ private fun TrackScreen(app: TrainFusionApp, args: LaunchArgs) {
             val recording = replay.recording
             if (recording != null) ReplayHeader(app, recording) else RecordHeader(app, onEditRide = { editingRide = true }, onRecord = {
                 if (recorder.isRecording) {
-                    scope.launch { recorder.stop() }
+                    app.scope.launch { recorder.stop() }
                 } else {
                     val wanted = buildList {
                         add(Manifest.permission.RECORD_AUDIO)

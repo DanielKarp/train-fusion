@@ -108,7 +108,8 @@ class AacEncoder(
     }
 
     private val codec: MediaCodec = MediaCodec.createEncoderByType(MIME)
-    val name: String get() = codec.name
+    /** (Read now: a released codec has no name, and meta.json asks for it after the recording.) */
+    val name: String = runCatching { codec.name as String? }.getOrNull() ?: "?"
     private val info = MediaCodec.BufferInfo()
     private var framesIn = 0L
     private var pcm = ShortArray(0)

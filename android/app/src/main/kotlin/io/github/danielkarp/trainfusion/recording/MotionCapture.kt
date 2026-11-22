@@ -61,7 +61,7 @@ class MotionCapture(context: Context, private val dir: File) {
         @Volatile var firstLatency: Double? = null
         /** Added to a sensor's timestamps to put them on the uptime clock (0 unless the sensor uses another). */
         private val offsets = HashMap<Int, Double>()
-        val bases = HashMap<String, String>()
+        val bases = java.util.concurrent.ConcurrentHashMap<String, String>()
         private val line = StringBuilder(256)
 
         /** Uptime of an event: SensorEvent.timestamp should be on elapsedRealtimeNanos; a sensor on the other monotonic clock is moved onto it. */

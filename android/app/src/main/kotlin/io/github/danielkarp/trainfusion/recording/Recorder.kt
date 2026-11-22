@@ -3,6 +3,7 @@ package io.github.danielkarp.trainfusion.recording
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -200,6 +201,15 @@ class Recorder(private val app: TrainFusionApp) {
     private fun writeMeta(ended: Pair<Double, Double>?) {
         val dir = dir ?: return
         val id = activeID ?: return
+        try {
+            writeMeta(dir, id, ended)
+        } catch (e: Exception) {
+            Log.e("Recorder", "couldn't write meta.json", e)
+            error = "Couldn't save the recording's description (meta.json): ${e.message ?: e.javaClass.simpleName}"
+        }
+    }
+
+    private fun writeMeta(dir: File, id: String, ended: Pair<Double, Double>?) {
         val fields = sortedMapOf<String, JsonElement>(
             "format_version" to JsonPrimitive(1),
             "id" to JsonPrimitive(id),
@@ -224,12 +234,9 @@ class Recorder(private val app: TrainFusionApp) {
             "ride" to (ride?.let { buildJsonObject { put("trip_number", it.trip); put("car_number", it.car); put("car_position", it.position.raw) } } ?: JsonNull),
         )
         val text = pretty.encodeToString(JsonElement.serializer(), JsonObject(fields))
-        try {
-            val tmp = File(dir, ".meta.json.tmp")
-            tmp.writeText(text)
-            tmp.renameTo(File(dir, "meta.json"))
-        } catch (_: Exception) {
-        }
+        val tmp = File(dir, ".meta.json.tmp")
+        tmp.writeText(text)
+        if (!tmp.renameTo(File(dir, "meta.json"))) throw java.io.IOException("couldn't replace meta.json")
     }
 
     companion object {

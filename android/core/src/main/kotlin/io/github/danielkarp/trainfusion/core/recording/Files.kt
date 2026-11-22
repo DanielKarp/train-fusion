@@ -24,13 +24,17 @@ class GzipWriter(file: File, header: String, private val now: () -> Double = { S
 
     init { write(header) }
 
+    /** (A failed write, e.g. a full disk, loses that line, as gzputs does, rather than stopping the caller.) */
     fun write(text: String) {
         val o = out ?: return
-        o.write(text.toByteArray(Charsets.US_ASCII))
-        val t = now()
-        if (t - lastFlush > 5) {
-            o.flush()
-            lastFlush = t
+        try {
+            o.write(text.toByteArray(Charsets.US_ASCII))
+            val t = now()
+            if (t - lastFlush > 5) {
+                o.flush()
+                lastFlush = t
+            }
+        } catch (_: IOException) {
         }
     }
 

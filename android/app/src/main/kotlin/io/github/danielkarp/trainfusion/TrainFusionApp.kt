@@ -44,6 +44,7 @@ class TrainFusionApp : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        keepCrashReports()
         settings = Settings(this)
         secure = SecureStore(this)
         account = Account(this)
@@ -64,6 +65,27 @@ class TrainFusionApp : Application() {
         // How many frames the AAC encoder delays audio by (the .m4a's edit list skips them):
         // measured once per encoder, here so that the first recording doesn't wait for it.
         scope.launch(Dispatchers.Default) { AacEncoder.primingFrames(this@TrainFusionApp) }
+    }
+
+    /**
+     * A crash's stack trace goes to crashes/<time>.txt next to the recordings (on a computer:
+     * Android/data/<package>/files/crashes), for testers without adb. Then Android's own handling.
+     */
+    private fun keepCrashReports() {
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, e ->
+            try {
+                val dir = java.io.File(getExternalFilesDir(null) ?: filesDir, "crashes").also { it.mkdirs() }
+                val text = java.io.StringWriter().also { w ->
+                    w.write("${io.github.danielkarp.trainfusion.recording.Recorder.appVersion} on ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}, " +
+                        "Android ${android.os.Build.VERSION.RELEASE}, thread ${thread.name}\n\n")
+                    e.printStackTrace(java.io.PrintWriter(w))
+                }.toString()
+                java.io.File(dir, "${System.currentTimeMillis()}.txt").writeText(text)
+            } catch (_: Throwable) {
+            }
+            previous?.uncaughtException(thread, e)
+        }
     }
 
     // MARK: what the screens ask about (ios/TrainRecorder/ContentView.swift)
