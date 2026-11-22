@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Writes android/config.properties (gitignored): where the backend is, and the sign-in
+# settings the app builds with, from terraform's outputs (as `just ios-config` writes
+# ios/Config.xcconfig). Run from the repo, in the nix shell, then rebuild the app.
+#
+# Uploads and Train Measurements need only the API's host. Signing in also needs an API key
+# restricted to the Android app (output `identity_api_key_android`) and the web OAuth client
+# Identity Platform's Google provider uses (`google_web_client_id` in infra/terraform.tfvars):
+# android/README.md, "Setting up the backend for Android".
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+url=$(terraform -chdir=infra output -raw api_url)
+host=${url#https://}; host=${host%/}
+site=$(terraform -chdir=infra output -raw site_host 2>/dev/null || true)
+key=$(terraform -chdir=infra output -raw identity_api_key_android 2>/dev/null || true)
+web=$(echo 'var.google_web_client_id' | terraform -chdir=infra console 2>/dev/null | tr -d '"' || true)
+case "$key" in *"No outputs"*|*"Error"*|*"Warning"*) key= ;; esac
+case "$web" in *"Error"*|*"Warning"*|*"null"*) web= ;; esac
+printf '%s\n' \
+    "API_HOST=$host" \
+    "IDENTITY_API_KEY=$key" \
+    "GOOGLE_WEB_CLIENT_ID=$web" \
+    "SITE_HOST=$site" \
+    > android/config.properties
+echo "wrote android/config.properties (API at $host${key:+, sign-in on}${key:-, no sign-in: no Android API key})"

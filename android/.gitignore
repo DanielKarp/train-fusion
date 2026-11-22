@@ -1,0 +1,13 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.kotlin/
+captures/
+# where the backend is and the sign-in settings (bin/android-config); like ios/Config.xcconfig
+config.properties
+# release signing (README.md, "Release builds")
+keystore.properties
+*.jks
+*.keystore

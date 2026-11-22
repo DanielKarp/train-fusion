@@ -234,3 +234,15 @@ timestamps are on the uptime clock as assumed.
   already in the bucket are skipped, never replaced. In the bucket a recording is
   `raw/<id>-<8 hex>/` (the backend adds the suffix so two phones can't collide).
 - Deleting in the app deletes from the phone only.
+
+## The Android app
+
+`android/` is a port of this app to Android: the same screens, the same recordings and the
+same online model, against the same backend. Its recordings are in this format, converted
+as they're written (Android's sensors use other units and signs), so everything above holds
+for them, with a few additions to `meta.json`: `platform: "android"` and the Android
+version and device instead of `ios_version`; `motion.sensors` and
+`motion.timestamp_clocks`; `audio.segments[].encoder_delay_frames` (the priming the .m4a's
+edit list skips, measured on the phone), `audio.silenced` (stretches when another app had
+the microphone and Android gave this one silence) and `audio.timestamps`. What differs and
+why: [android/README.md](../android/README.md).

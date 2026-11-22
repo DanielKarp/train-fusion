@@ -207,3 +207,22 @@ To do outside the code (checklist):
 - TestFlight external testing first (it goes through a lighter version of the review);
 - for Google Play later: the Data Safety form, and a web page for account deletion
   requests.
+
+## The Android app
+
+`android/` implements the same requirements, with these differences (details in
+[android/README.md](../android/README.md)):
+
+- no Sign in with Apple (Android has no support for it; Google's store doesn't require it):
+  Google (the system's account chooser) and the emailed link. An account made with Apple on
+  an iPhone can sign in on Android with an email link; deleting it from Android can't revoke
+  its Apple tokens;
+- the device secret is lost when the app is uninstalled (the iOS Keychain keeps it), so after
+  a reinstall what the phone shared without an account can't be deleted or linked from the
+  app;
+- uploads run in WorkManager; one over today's limit is retried at the time the server
+  gives;
+- uploading and sharing Train Measurements need only the backend's address; signing in
+  needs an API key for the Android app (docs/deploy.md);
+- for Google Play: the Data safety form (Train Measurements count as *shared*), and a web
+  page or address for account deletion requests besides the in-app deletion.

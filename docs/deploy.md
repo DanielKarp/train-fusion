@@ -184,6 +184,16 @@ which cuts those builds off.
    its recordings over: Finder → the phone → Files → copy `recordings/` out of the old app
    and into the new one (or upload them from the old app first).
 
+### Android
+
+For the Android app (`android/`, package `io.github.danielkarp.trainfusion`), once, after the
+above: an API key restricted to the Android app (package and signing certificates' SHA-1)
+for Identity Platform, an **Android** OAuth client (same package and SHA-1s) for Google
+sign-in, and the web client's id where `android/bin/android-config` finds it. The terraform
+and the steps are in [android/README.md](../android/README.md), "Setting up the backend for
+Android". Uploads and Train Measurements from the Android app need none of it, only the
+API's host.
+
 ### Day to day
 
 | | |

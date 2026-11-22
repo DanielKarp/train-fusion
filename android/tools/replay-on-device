@@ -1,0 +1,29 @@
+#!/bin/sh
+# The Android version of bin/ios-sim-replay: install the app on the phone or emulator adb
+# sees, copy recordings from data/recordings/raw onto it, replay each flat out through the
+# app's model (-dump), pull the dumps and compare them with the Python pipeline
+# (python -m app.compare: features, then speed, legs and stations against the labels).
+#   android/tools/replay-on-device                      # every labelled recording
+#   android/tools/replay-on-device <recording id> ...   # some
+# Needs adb, and once `cd phone-sensor-fusion && python -m app.export` (the reference features).
+set -e
+cd "$(dirname "$0")/../.."
+PKG=io.github.danielkarp.trainfusion
+FILES=/sdcard/Android/data/$PKG/files  # (Android 11+; on Android 10 the app keeps them internally)
+(cd android && ./gradlew -q :app:installDebug)
+out=$(mktemp -d)
+[ $# -gt 0 ] || set -- $(cd data/recordings/labels && ls -d */ | tr -d /)
+adb shell rm -rf "$FILES/replay_dump"
+for r in "$@"; do
+  adb shell "[ -d $FILES/recordings/$r ]" || adb push "data/recordings/raw/$r" "$FILES/recordings/$r" >/dev/null
+  adb shell am force-stop $PKG
+  adb shell am start -n $PKG/.MainActivity --es autoreplay "$r" --es replayspeed max --ez dump true >/dev/null
+  f="$FILES/replay_dump/$r.jsonl"; prev=-1
+  while :; do  # done when the dump stops growing
+    sleep 3; n=$(adb shell "wc -l < $f 2>/dev/null || echo 0" | tr -d '\r')
+    [ "$n" = "$prev" ] && [ "$n" -gt 100 ] && break; prev=$n
+  done
+  adb pull "$f" "$out/$r.jsonl" >/dev/null
+done
+adb shell am force-stop $PKG
+bin/psf-dev python -m app.compare "$out"/*.jsonl 2>&1 | grep -v "^warning"

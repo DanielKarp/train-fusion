@@ -42,6 +42,11 @@ filter in Swift. For now:
 Recordings (the files a recording consists of, `docs/recorder.md`) are different: those
 are data we keep, and their format should only grow.
 
+The Android app (`android/`) ports the same inference to Kotlin (`android/core/`) under the
+same rules: it reads the same `model.json` (copied from `ios/` at build time), shares no code
+with the Python model, and is checked with `python -m app.compare` too
+(`android/README.md`). Its recordings are in the same format.
+
 ## Private data stays out of git
 
 The phone recordings are of one person's train rides. Which trains they took, when, and

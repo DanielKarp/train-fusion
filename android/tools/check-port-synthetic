@@ -1,0 +1,14 @@
+#!/bin/sh
+# Checks the Kotlin port of the model (core/) against phone-sensor-fusion on a made-up
+# recording: per-second features within app.compare's tolerances. Needs no recordings or
+# labels, only ffmpeg and phone-sensor-fusion's Python (numpy, scipy): run it in the repo's
+# nix shell, from anywhere.
+#   android/tools/check-port-synthetic [seconds]
+set -e
+cd "$(dirname "$0")/.."
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+id=20000101T000000Z  # made up
+python tools/synthetic_recording.py "$tmp/raw/$id" "${1:-150}"
+./gradlew -q :core:replay --args="$tmp/raw/$id $tmp/$id.jsonl"
+python tools/compare_features.py "$tmp/raw" "$id" "$tmp/$id.jsonl" "$tmp/derived"
