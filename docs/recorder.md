@@ -22,10 +22,12 @@ made since uploads went through the backend; plain `<id>` for older ones.
 Three, behind a tab bar:
 
 - **Measure**: what the model believes right now (next section), under a thin header.
-  Normally the header has the elapsed time, in the middle the train ("Enter trip and car
-  number"; tap for a sheet with trip number, car number and upper / lower / vestibule,
-  whose Save refuses numbers that can't be right; tap again to edit or clear; it goes into
-  `meta.json` and the model doesn't use it) and, on the right, the record button. When a recording is being
+  The header has "Not recording" and 00:00, or "Recording" and the elapsed time, beside
+  the record (stop) button. With nothing going on the middle of the screen says "Tap ⦿ to
+  start." (the button's symbol, not its colour) While recording, and the first row is the train ("Enter
+  trip and car number"; tap for a sheet with trip number, car number and upper / lower /
+  vestibule, whose Save refuses numbers that can't be right; tap again to edit or clear;
+  it goes into `meta.json` and the model doesn't use it). When a recording is being
   replayed it has two lines: a progress bar with elapsed / total time and which recording
   it is; and previous stop, play / pause, next stop and the replay speed (1× to 64×, or as
   fast as it goes). "Stop" means a door opening the model heard; with none left in that
@@ -52,21 +54,39 @@ Three, behind a tab bar:
   4. icons for how good the information is: the phone (lying still / held / being moved),
      the motor tone, the along-track acceleration, and the wheel vibration. Green good,
      yellow fair, red missing, grey not in play. Tap for each one's state and a number.
-
-  Every probability is still there under "Details".
-- **Settings**: miles and mph, or kilometres and km/h; Train Measurements (share
-  automatically; delete what's shared); full recordings (how many to keep on the phone;
-  whether to ask about uploading after each ride; deleting shared recordings, done by
-  hand within 30 days); the account (sign in with Apple, Google or an email link; sign
-  out; delete account); the privacy policy.
+- **Settings**: miles and mph, or kilometres and km/h; **Phone Data**: Keep Recordings
+  (None, Last 3, All); **Sharing**: Measurements (Ask, Always, or Never),
+  Recordings (Ask or Never), and Delete Shared Data, a screen of its own
+  so it isn't tapped by accident, with "Delete all shared Train Measurements" and "Delete
+  all shared Full Recordings" (each confirmed; done by hand within 30 days); the account
+  (sign in with Apple, Google or an email link; sign out; delete account); the privacy
+  policy.
 - **History**: the rides on the phone (`Application Support/rides.json`; a ride outlives its
-  recording), each with upload and replay while its recording is still here; swipe a row
-  left to delete it from the phone. A row is
-  titled by where the model heard the ride start and end ("Millbrae → San Jose Diridon";
-  "Unknown trip" if it named no stop), then the date, length and size (or "recording not
-  kept"), whether it's uploaded and its measurements shared, then the trip and car if they were typed in. Replay
-  (not offered while recording) plays a finished recording back through the model, to watch
-  the beliefs without being on a train.
+  recording), then, under "Shared, not on this phone", rides deleted from the phone that
+  still have something shared. When there are both, each is a section that folds away
+  (tap its header); the first starts open, the second folded. A row is titled by where the
+  model heard the ride start and end with the short station names ("Millbrae → San Jose"; "Unknown
+  ride" if it named no stop), then the date, length and size (while the recording is on the phone), then what's
+  shared, in words ("Not Shared", "Shared: Measurements", "Shared: Measurements,
+  Recording"), followed by anything under way ("Sharing Recording 43%", "Couldn't share
+  Measurements"). Tapping a row opens the ride, titled like the row: its date, duration
+  and train (if typed in), one per row (the size is on Delete Full Recording); Play back while the recording is on the phone (Stop playback for
+  the ride being played back); **Phone Data**: Delete Full Recording
+  (with its size, and "Keeps the ride in History"); **Sharing**, a row each for
+  Train Measurements and Full Recording with its state in words and Share (asking first, as
+  in [accounts-and-uploads.md](accounts-and-uploads.md)) or Unshare (confirmed first; asks
+  for that ride's to be deleted); and, on its own at the bottom, Delete Ride. A ride
+  that's only shared offers just Unshare. Deleting
+  from the phone brings what's shared up to date at once, so the ride shows under "Shared,
+  not on this phone" if anything of it is shared. Replay (not while recording) plays a finished recording back through the
+  model, to watch the beliefs without being on a train.
+
+  What's shared is kept on the phone (rides.json; the rides not on the phone in
+  `shared-elsewhere.json`, made from the server's copy of their measurements) and brought
+  up to date from the server (`GET /v1/measurements`, `GET /v1/uploads`, with the device
+  secret and the account if signed in) when History appears, when it's pulled down and
+  when the app comes to the front. Anything marked for deletion shows as not shared;
+  sharing it again undoes that.
 
 ## Online inference (experimental)
 
@@ -107,6 +127,24 @@ What the online version can't do like the offline pipeline, and does instead:
 - a stop is the settled probability of the door-open chime crossing ½;
 - distance is the expected distance given everything so far, carried forward with the
   filter (not the sum of filtered speeds).
+
+### The sample ride
+
+The first time the app runs it puts a **sample ride** in History, "Sample: San Francisco →
+Palo Alto", so the app can be tried without a train (by the store's
+reviewers too). It's generated as it plays (`Inference/SampleRide.swift`), so the real
+feature extraction and filter run on it as on a recording. Only the stop list and each
+stop's dwell are hard-coded (made up); the rest comes from simple models and noise. The
+train runs as fast as the speed limits allow, with an electric train's acceleration and
+braking; the limits are the line's 79 mph, curves (from the map's curvature, at the
+sideways acceleration a canted curve allows) and 25 mph leaving 4th & King. Positions,
+heading, curvature and elevation come from the map in `model.json`, and from those the
+door chimes, motor tone and rumble, wheel lines and vibration, yaw and pressure of a
+phone lying flat. Same seed every time, so it replays the same.
+
+On the phone it's just a `meta.json` with `"sample": true` (and the stops, for History).
+It can be played back and deleted like any ride (it isn't put back), and never shared.
+Each launch rewrites its meta.json (keeping its date), so its stops follow the generator.
 
 ### Trying it in the simulator
 

@@ -22,7 +22,7 @@ struct UploadConsent: Identifiable {
 /// What each kind of sharing is, as icon lines: in the questions, and behind Settings' ?
 /// (`SharingInfoSheet`), so the two always say the same.
 enum SharingInfo {
-    static let recordingPurpose = "To improve the localizer"
+    static let recordingPurpose = "To improve train tracking"
     static let recordingRows: [ConsentSheet.Row] = [
         .init("waveform", "Audio, including nearby voices"),
         .init("sensor", "Motion, compass, barometer"),
@@ -37,7 +37,7 @@ enum SharingInfo {
               more: "We remove your account and device IDs first. They must agree to use the data only for train operations research, and only publish aggregated statistics, but we cannot guarantee what they do after they receive the data."),
     ]
 
-    static let deleteRow = ConsentSheet.Row("trash", "Delete any time in Settings")
+    static let deleteRow = ConsentSheet.Row("trash", "Unshare any time in History")
 }
 
 /// Settings' ?: what's shared, laid out like the question, with just an OK.
@@ -54,7 +54,7 @@ struct SharingInfoSheet: View, Identifiable {
             ConsentSheet(title: "Sharing Train Measurements", subtitle: SharingInfo.measurementsPurpose,
                          rows: SharingInfo.measurementsRows, choices: [.init("OK", primary: true) { dismiss() }])
         case .recordings:
-            ConsentSheet(title: "Sharing full recordings", subtitle: SharingInfo.recordingPurpose,
+            ConsentSheet(title: "Sharing Full Recordings", subtitle: SharingInfo.recordingPurpose,
                          rows: SharingInfo.recordingRows, choices: [.init("OK", primary: true) { dismiss() }])
         }
     }
@@ -66,7 +66,7 @@ struct UploadConsentSheet: View {
 
     var body: some View {
         ConsentSheet(
-            title: "Share full recording?",
+            title: "Share Full Recording?",
             subtitle: SharingInfo.recordingPurpose + " · " + ByteCountFormatter.string(fromByteCount: request.bytes, countStyle: .file),
             rows: SharingInfo.recordingRows + [SharingInfo.deleteRow],
             choices: [
@@ -100,7 +100,24 @@ struct MeasurementsConsentSheet: View {
     }
 }
 
-/// The layout both questions share: a title and what it's for, a few icon lines, then the
+/// Sharing one ride's Train Measurements, from History: Share / Don't share. Leaves the
+/// setting as it is.
+struct RideMeasurementsConsentSheet: View {
+    let share: (Bool) -> Void
+
+    var body: some View {
+        ConsentSheet(
+            title: "Share Train Measurements?",
+            subtitle: SharingInfo.measurementsPurpose,
+            rows: SharingInfo.measurementsRows + [SharingInfo.deleteRow],
+            choices: [
+                .init("Share", primary: true) { share(true) },
+                .init("Don't share") { share(false) },
+            ])
+    }
+}
+
+/// The layout the questions share: a title and what it's for, a few icon lines, then the
 /// answers as full-width buttons, one per row. Sized to its content.
 struct ConsentSheet: View {
     struct Row: Identifiable {

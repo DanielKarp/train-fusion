@@ -47,9 +47,9 @@ the bucket without limit; anyone with a build could extract it.)
   **Delete account**. Signing out keeps everything on the phone.
 - On signing in, if this phone shared measurements or uploads before (with its device
   secret, not linked to any account), the app offers to link them to the account.
-- **Delete account** (*store*: Apple and Google require in-app account deletion). It says
-  that it deletes the account, the Train Measurements linked to it, and the recordings
-  uploaded while signed in (or linked to it). What happens:
+- **Delete account** (*store*: Apple and Google require in-app account deletion). It asks
+  "Delete your account and what it shared?": the account, the Train Measurements linked
+  to it, and the recordings uploaded while signed in (or linked to it). What happens:
   - the account is deleted at once;
   - its Train Measurements and uploaded recordings are marked for deletion, and the
     developer deletes them by hand (`just deletions`). This is deliberate: deleting must
@@ -75,24 +75,34 @@ the bucket without limit; anyone with a build could extract it.)
   "Position, speed, stops, times"; "No audio"; "**Anyone who asks gets it**" (with
   details behind an ⓘ: "We remove your account and device IDs first. They must agree to use the data only for train
   operations research, and only publish aggregated statistics, but we cannot guarantee
-  what they do after they receive the data."); delete any time in Settings. It's asked at
+  what they do after they receive the data."); "Unshare any time in History". It's asked at
   every recording until answered for good:
-  - **Always share**: turns the setting below on (this ride is shared too); not asked again;
+  - **Always share**: turns the setting below (Always) on (this ride is shared too); not asked again;
   - **Share just this ride**: shares the ride being recorded, leaves the setting off, and
     asks again next recording;
   - **No, and don't ask again**: leaves the setting off; not asked again;
   - dismissing it (swiping it down, tapping outside it) answers nothing: this ride isn't
     shared, and it's asked again next recording.
 - Settings, **Train Measurements** section:
-  - **Share** (with a ? that shows the question's lines, with just OK): **Ask each ride**
-    (the default: the question above) / **Always share** / **Don't ask** (nothing shared). The question's answers set it the same way. With Always share, each ride's
+  - **Share** (with a ? that shows the question's lines, with just OK): **Ask**
+    (the default: the question above) / **Always** / **Never** (nothing shared). The question's answers set it the same way. With Always, each ride's
     measurements are shared when its recording stops (retried when the app is next opened
     if there's no network). Rides recorded while it wasn't on aren't shared later.
-  - **Delete shared measurements** (confirmed first): marks every ride's measurements
+- Settings, **Delete Shared Data** (the last row, a screen of its own so it isn't tapped
+  by accident):
+  - **Delete all shared Train Measurements** (confirmed first): marks every ride's measurements
     shared from this phone, and every one linked to the signed-in account, for deletion;
     the developer deletes them by hand within 30 days, as with recordings. They stay on the
-    phone. A ride whose measurements are waiting to be deleted isn't shared again. Copies
-    already given to researchers can't be recalled (they had identifiers removed).
+    phone. A ride whose measurements are waiting to be deleted isn't shared again
+    automatically; History shows it as not shared, and sharing it from there (asked first)
+    undoes its deletion. Copies already given to researchers can't be recalled (they had
+    identifiers removed).
+- History can also **unshare** one ride's measurements (confirmed first): the same, for
+  that ride only. Rides deleted from the phone whose measurements or recording are still
+  shared are listed there ("Shared, not on this phone") for this.
+- History can share any ride's measurements, whatever the setting: its Share button asks
+  "Share Train Measurements?" for that ride (Share / Don't share), and leaves the setting
+  as it is.
 - Limits on new measurements (updating one already shared isn't counted): **10,000 a day**
   without an account, all devices together, and **1,000 a day** per account. Over the limit
   they stay pending and are shared another day.
@@ -102,23 +112,25 @@ the bucket without limit; anyone with a build could extract it.)
 
 ### Asking after each ride
 
-- When a recording is stopped (with the app's stop button), the app asks "Share full
-  recording?" ("To improve the localizer", and its size): **Share** / **Don't share** / **Don't ask again**. There's deliberately no way to upload every
+- When a recording is stopped (with the app's stop button), the app asks "Share Full
+  Recording?" ("To improve train tracking", and its size): **Share** / **Don't share** / **Don't ask again**. There's deliberately no way to upload every
   recording automatically: each upload is a yes to that recording. The question says:
   - "Audio, including nearby voices";
   - "Motion, compass, barometer";
   - "Only this app's devs get it";
-  - delete any time in Settings.
+  - "Unshare any time in History".
 - "Don't ask again" declines this one and sets Settings' Full Recordings **Share** (with
-  a ? like the one above) from **Ask each ride** to **Don't ask** (nothing shared). With the setting off, new recordings count as declined
+  a ? like the one above) from **Ask** to **Never** (nothing shared). With the setting off, new recordings count as declined
   (they can still be shared from History). Nothing in the question pairs "Share" with
   remembering, so nothing can read as "share from now on".
 - A recording over the size limit isn't offered; History says it's too large.
 
 ### Uploading from History
 
-- Each ride in History whose recording is still on the phone and hasn't been uploaded has
-  an upload button. It shows the same explanation and asks **Yes / No** every time.
+- Each ride in History whose recording is still on the phone and isn't shared has a Share
+  button. It shows the same explanation and asks **Share / Don't share** every time. A
+  recording whose upload is marked for deletion counts as not shared; sharing it again
+  uploads it afresh (the marked upload is still deleted).
 
 ### How uploads run
 
@@ -157,9 +169,11 @@ accounts can be spotted and blocked by hand.
 
 ### Asking for uploads to be deleted
 
-- Settings has **Delete shared recordings** (confirmed first): it marks every recording uploaded
+- Settings, Delete Shared Data, has **Delete all shared Full Recordings** (confirmed first): it marks every recording uploaded
   from this phone, and every one linked to the signed-in account, for deletion. As with
   account deletion, the developer deletes them by hand, within 30 days.
+- History can do the same for one ride's recording (**Unshare**, confirmed first), also for
+  rides no longer on the phone.
 - Copies on developers' laptops are dealt with by occasionally deleting the local data and
   downloading again from the bucket.
 
@@ -175,8 +189,8 @@ accounts can be spotted and blocked by hand.
   deleted. "Don't keep" deletes each recording as soon as it is settled (so with Ask on,
   after the question is answered and any upload has finished).
 - Changing the setting to keep fewer asks first, saying how many recordings it deletes.
-- Swiping a ride away in History deletes it (ride and recording) from the phone only:
-  anything shared stays shared.
+- Deleting a ride in History (Delete Ride) deletes it (ride and recording) from the
+  phone only: anything shared stays shared.
 
 ## App store readiness
 
@@ -200,9 +214,9 @@ To do outside the code (checklist):
   not used for tracking), support URL, age rating. Train Measurements are given to third
   parties who ask (researchers), which App Privacy has to say; and Google Play's Data
   Safety form counts that as "shared";
-- a **demo ride for the reviewer**, who won't be on a train: a recording made for the
-  purpose (it ships to everyone, so not one of the developer's own rides), bundled and
-  replayable; plus review notes saying how to try it;
+- a **demo ride for the reviewer**, who won't be on a train: done in the app, the sample
+  ride (generated, not anyone's recording; [recorder.md](recorder.md), "The sample ride");
+  still to do: review notes saying how to try it (History, the sample, Play back);
 - don't suggest affiliation with Caltrain in the name, icon or listing;
 - TestFlight external testing first (it goes through a lighter version of the review);
 - for Google Play later: the Data Safety form, and a web page for account deletion
