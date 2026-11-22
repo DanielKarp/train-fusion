@@ -12,7 +12,8 @@ import SwiftUI
 /// sharing it again undoes that.
 struct HistoryScreen: View {
     let store: RideStore
-    let canReplay: Bool  // not while a recording is in progress
+    /// A recording is in progress: playing back says to stop it first.
+    let isRecording: Bool
     let protecting: Set<String>
     /// The recording being played back, if any.
     let playing: String?
@@ -60,7 +61,7 @@ struct HistoryScreen: View {
             .navigationDestination(for: String.self) { id in
                 RideDetail(store: store, id: id, uploadState: uploader.states[id],
                            replayProblem: replayProblem(id),
-                           isPlaying: playing == id,
+                           isPlaying: playing == id, isRecording: isRecording,
                            onReplay: { if let recording = store.recordings[id] { onReplay(recording) } },
                            onStopPlayback: onStopPlayback,
                            onShareMeasurements: { if let ride = store.ride(id) { askingMeasurements = ride } },
@@ -111,7 +112,6 @@ struct HistoryScreen: View {
     private func replayProblem(_ id: String) -> String? {
         guard let recording = store.recordings[id] else { return "The Full Recording isn't on this phone any more." }
         if recording.duration == nil { return "This ride wasn't stopped properly, so it can't be played back." }
-        if !canReplay { return "Not while recording." }
         return nil
     }
 
@@ -337,6 +337,7 @@ struct RideDetail: View {
     let uploadState: Uploader.State?
     let replayProblem: String?
     let isPlaying: Bool
+    let isRecording: Bool
     let onReplay: () -> Void
     let onStopPlayback: () -> Void
     let onShareMeasurements: () -> Void
@@ -348,6 +349,8 @@ struct RideDetail: View {
     @State private var confirmDelete = false
     @State private var confirmDeleteRecording = false
     @State private var confirmUnshare: RideStore.Shared?
+    /// Play back was tapped while recording: saying to stop it first.
+    @State private var mustStopRecording = false
 
     var body: some View {
         if let ride = store.anyRide(id) {
@@ -369,8 +372,13 @@ struct RideDetail: View {
                         if isPlaying {
                             Button(action: onStopPlayback) { Label("Stop playback", systemImage: "stop.fill") }
                         } else {
-                            Button(action: onReplay) { Label("Play back", systemImage: "play.fill") }
-                                .disabled(replayProblem != nil)
+                            Button {
+                                if isRecording { mustStopRecording = true } else { onReplay() }
+                            } label: { Label("Play back", systemImage: "play.fill") }
+                            .disabled(replayProblem != nil)
+                            .alert("Stop recording first", isPresented: $mustStopRecording) {
+                                Button("OK", role: .cancel) {}
+                            }
                         }
                     } footer: {
                         if let replayProblem, !isPlaying { Text(replayProblem) }
