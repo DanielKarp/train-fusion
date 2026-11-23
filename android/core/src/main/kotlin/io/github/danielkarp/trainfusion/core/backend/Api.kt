@@ -115,7 +115,10 @@ class Api(
 
     val configured: Boolean get() = baseUrl != null
 
-    fun call(method: String, path: String, json: JsonElement? = null, auth: Auth = Auth.NONE, device: Boolean = false): JsonObject {
+    fun call(
+        method: String, path: String, json: JsonElement? = null, auth: Auth = Auth.NONE, device: Boolean = false,
+        query: Map<String, String> = emptyMap(),
+    ): JsonObject {
         val base = baseUrl ?: throw ApiError(0, "not_configured", NOT_CONFIGURED)
         val headers = HashMap<String, String>()
         val body = json?.toString()?.toByteArray()
@@ -127,7 +130,10 @@ class Api(
         }
         if (device) headers["X-Device-Secret"] = deviceSecret()
         val response = try {
-            Http.request(method, base.trimEnd('/') + "/" + path, headers, body)
+            val q = if (query.isEmpty()) "" else "?" + query.entries.joinToString("&") {
+                "${java.net.URLEncoder.encode(it.key, "UTF-8")}=${java.net.URLEncoder.encode(it.value, "UTF-8")}"
+            }
+            Http.request(method, base.trimEnd('/') + "/" + path + q, headers, body)
         } catch (e: IOException) {
             throw ApiError(0, "network", "Couldn't reach the server: ${e.message ?: e.javaClass.simpleName}")
         }

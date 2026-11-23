@@ -28,12 +28,13 @@ How the iOS files map:
 |---|---|
 | `Inference/Model, DSP, Features, Engine` | `core/…/inference/Model, Dsp, Features, Engine` |
 | `Inference/Drivers` (replay) | `core/…/inference/Replay` + `app/…/replay/ReplayPlayer` |
+| `Inference/SampleRide` | `core/…/inference/SampleRide` (the same ride from the same seed) |
 | `Inference/Drivers` (live) | `app/…/recording/LiveInference` |
 | `Recorder, AudioCapture, MotionCapture, Clock, GzipWriter` | `app/…/recording/Recorder, AudioCapture (+ AacEncoder), MotionCapture, ClockLog`; `core/…/recording/Files, Ntp, M4aWriter` |
 | `RecordingStore` | `core/…/recording/Ride` + `app/…/store/RideStore` |
 | `Uploader, Backend` | `core/…/backend/Uploads, Api` + `app/…/store/Uploader` (WorkManager) |
 | `Account, Keychain, AppSettings` | `core/…/backend/Identity` + `app/…/store/Account`, `app/…/platform/Platform` |
-| `ContentView, BeliefView, HistoryScreen, SettingsScreen, UploadConsent` | `app/…/ui/MainScreen, BeliefView, HistoryScreen, SettingsScreen, Consent` |
+| `ContentView, BeliefView, HistoryScreen, SettingsScreen, UploadConsent` | `app/…/ui/MainScreen, BeliefView, HistoryScreen, SettingsScreen, Consent` (+ `Form`: the grouped-list pieces an iOS `Form` gives for free) |
 
 As on iOS, the model's port is a re-implementation and shares nothing with the Python code
 but `model.json` ([AGENTS.md](../AGENTS.md)): the build copies `../ios/TrainRecorder/model.json`
@@ -167,7 +168,12 @@ What can't be replicated cleanly, and what the Android app does instead:
   notification shows it's still going and stops it. A recording stopped from the
   notification asks about uploading the next time the app is opened.
 - **No permission question for the barometer.** iOS asks for Motion & Fitness access;
-  Android sensors need none. Android 13+ asks to show notifications (the recording one).
+  Android sensors need none, so the Measure screen has only the microphone's banner, not the
+  barometer's (a phone without a barometer records without one, unannounced, as an iPhone
+  without one would). The banner's "Open Settings" opens the app's page in the system
+  settings. Android can't tell "not asked yet" from "refused" without asking, so the banner
+  shows once the microphone has been asked for and refused. Android 13+ also asks to show
+  notifications (the recording one).
 - **The microphone.** iOS's `.measurement` mode turns off gain control and voice
   processing. Android's equivalent is the `UNPROCESSED` source, which not every phone has;
   without it the app uses `VOICE_RECOGNITION`, which should have no gain control or noise
@@ -218,8 +224,7 @@ What can't be replicated cleanly, and what the Android app does instead:
 - **Smaller things:** the testing launch arguments are intent extras
   (`adb shell am start … --es autoreplay <id> --es replayspeed max --ez dump true`); a
   privacy manifest has no Android equivalent (Play's Data safety form is filled in on the
-  console); trip numbers may start with 6 (weekend locals), which the iOS app refuses (a
-  bug there); `app_version` is `0.1-android (<version code>)`, so shared data says which app,
+  console); `app_version` is `0.1-android (<version code>)`, so shared data says which app,
   and which build, made it; crashes are written to a file for testers
   ([When it crashes](#when-it-crashes)), where the iOS app relies on Apple's crash logs.
 
@@ -261,13 +266,15 @@ written so the Python pipeline reads them unchanged:
 ./gradlew :core:test :app:testDebugUnitTest
 ```
 
-- `core`: the features and engine on made-up sensor data; the recording format (gzip
-  files cut short, rides from meta.json and NTP, recording ids, sizes); the .m4a writer
+- `core`: the features and engine on made-up sensor data; the sample ride through the
+  engine (every stop heard, every station named); the recording format (gzip files cut
+  short, rides from meta.json and NTP, recording ids, sizes, trip numbers); the .m4a writer
   checked with ffmpeg (frame 0 first; skipped without ffmpeg).
 - **The backend client against the real backend code**, with its in-memory fakes and a
   fake bucket that takes the signed PUTs as GCS does (`tools/fake_backend.py`; needs
   `pip install fastapi uvicorn`): sharing, an upload cut off half way and resumed, sign-in
-  registration, linking, deletion requests, account deletion.
+  registration, linking, deletion requests (all, one ride's, one recording's), sharing
+  again after one, account deletion.
 
   ```sh
   python android/tools/fake_backend.py 8765 &
@@ -279,7 +286,8 @@ written so the Python pipeline reads them unchanged:
     AAC encoder: the files are there, `meta.json` is complete, the ride and the upload
     question follow (`RecorderTest`; on version code 1's code it fails where that build
     crashed, `meta.json` asking the encoder for its name);
-  - the Measure cards, the consent questions, History and Settings rendered from made-up
+  - the Measure cards and idle screen, the consent questions, History (with rides only
+    shared, and a ride's screen) and Settings (and Delete Shared Data) rendered from made-up
     beliefs and rides into `app/build/screenshots/`, to look at.
 
   The first run downloads Robolectric's Android jars (about 200 MB) from Maven Central.

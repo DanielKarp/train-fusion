@@ -193,6 +193,11 @@ class Settings(context: Context) {
         return true
     }
 
+    /** Whether the microphone permission has been asked for (Android can't tell "not asked" from "refused" otherwise). */
+    var askedMicrophone: Boolean
+        get() = prefs.getBoolean("askedMicrophone", false)
+        set(v) { prefs.edit().putBoolean("askedMicrophone", v).apply() }
+
     var pendingEmail: String?
         get() = prefs.getString("account.pendingEmail", null)
         set(v) { prefs.edit().apply { if (v == null) remove("account.pendingEmail") else putString("account.pendingEmail", v) }.apply() }

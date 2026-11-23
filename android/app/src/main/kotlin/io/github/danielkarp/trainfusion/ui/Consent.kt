@@ -41,7 +41,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -67,7 +66,7 @@ class ConsentChoice(val label: String, val primary: Boolean = false, val action:
 
 /** What each kind of sharing is, as icon lines: in the questions, and behind Settings' ?, so the two always say the same. */
 object SharingInfo {
-    const val RECORDING_PURPOSE = "To improve the localizer"
+    const val RECORDING_PURPOSE = "To improve train tracking"
     val recordingRows = listOf(
         ConsentRow(Icons.Outlined.GraphicEq, "Audio, including nearby voices"),
         ConsentRow(Icons.Outlined.Sensors, "Motion, compass, barometer"),
@@ -82,7 +81,7 @@ object SharingInfo {
             more = "We remove your account and device IDs first. They must agree to use the data only for train operations research, and only publish aggregated statistics, but we cannot guarantee what they do after they receive the data."),
     )
 
-    val deleteRow = ConsentRow(Icons.Outlined.Delete, "Delete any time in Settings")
+    val deleteRow = ConsentRow(Icons.Outlined.Delete, "Unshare any time in History")
 }
 
 enum class SharingKind { MEASUREMENTS, RECORDINGS }
@@ -93,7 +92,7 @@ fun SharingInfoSheet(kind: SharingKind, onDismiss: () -> Unit) {
     when (kind) {
         SharingKind.MEASUREMENTS -> ConsentSheet("Sharing Train Measurements", SharingInfo.MEASUREMENTS_PURPOSE, SharingInfo.measurementsRows,
             listOf(ConsentChoice("OK", primary = true, onDismiss)), onDismiss)
-        SharingKind.RECORDINGS -> ConsentSheet("Sharing full recordings", SharingInfo.RECORDING_PURPOSE, SharingInfo.recordingRows,
+        SharingKind.RECORDINGS -> ConsentSheet("Sharing Full Recordings", SharingInfo.RECORDING_PURPOSE, SharingInfo.recordingRows,
             listOf(ConsentChoice("OK", primary = true, onDismiss)), onDismiss)
     }
 }
@@ -102,13 +101,28 @@ fun SharingInfoSheet(kind: SharingKind, onDismiss: () -> Unit) {
 @Composable
 fun UploadConsentSheet(request: UploadConsent, answer: (UploadConsent.Answer) -> Unit, onDismiss: () -> Unit) {
     ConsentSheet(
-        title = "Share full recording?",
+        title = "Share Full Recording?",
         subtitle = SharingInfo.RECORDING_PURPOSE + " · " + formatBytes(request.bytes),
         rows = SharingInfo.recordingRows + SharingInfo.deleteRow,
         choices = listOf(
             ConsentChoice("Share", primary = true) { answer(UploadConsent.Answer(upload = true, stopAsking = false)) },
             ConsentChoice("Don't share") { answer(UploadConsent.Answer(upload = false, stopAsking = false)) },
         ) + if (request.afterRide) listOf(ConsentChoice("Don't ask again") { answer(UploadConsent.Answer(upload = false, stopAsking = true)) }) else emptyList(),
+        onDismiss = onDismiss,
+    )
+}
+
+/** Sharing one ride's Train Measurements, from History: Share / Don't share. Leaves the setting as it is. */
+@Composable
+fun RideMeasurementsConsentSheet(share: (Boolean) -> Unit, onDismiss: () -> Unit) {
+    ConsentSheet(
+        title = "Share Train Measurements?",
+        subtitle = SharingInfo.MEASUREMENTS_PURPOSE,
+        rows = SharingInfo.measurementsRows + SharingInfo.deleteRow,
+        choices = listOf(
+            ConsentChoice("Share", primary = true) { share(true) },
+            ConsentChoice("Don't share") { share(false) },
+        ),
         onDismiss = onDismiss,
     )
 }
@@ -137,7 +151,7 @@ fun MeasurementsConsentSheet(answer: (MeasurementsAnswer) -> Unit, onDismiss: ()
 }
 
 /**
- * The layout both questions share: a title and what it's for, a few icon lines, then the
+ * The layout the questions share: a title and what it's for, a few icon lines, then the
  * answers as full-width buttons, one per row. Sized to its content.
  */
 @OptIn(ExperimentalMaterial3Api::class)

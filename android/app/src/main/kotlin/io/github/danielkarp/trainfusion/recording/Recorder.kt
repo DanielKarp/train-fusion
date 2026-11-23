@@ -60,6 +60,9 @@ class Recorder(private val app: TrainFusionApp) {
     var starting by mutableStateOf(false)  // starting the sensors
         private set
     var error by mutableStateOf<String?>(null)
+    /** Microphone access was refused: nothing can be recorded (the Measure screen says so, with a way to Settings). */
+    var microphoneDenied by mutableStateOf(false)
+        private set
     /** Trip and car of the recording in progress (or, typed in before starting, of the next one). Set with `setRide`. */
     var ride by mutableStateOf<RideInfo?>(null)
         private set
@@ -82,10 +85,8 @@ class Recorder(private val app: TrainFusionApp) {
         starting = true
         error = null
         try {
-            if (ContextCompat.checkSelfPermission(app, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                error = "Microphone access is off. Turn it on in Settings › Apps › Train Fusion › Permissions."
-                return
-            }
+            microphoneDenied = !microphoneGranted()
+            if (microphoneDenied) return
             val now = AndroidClock.now()
             val id = RecordingID.make(Date((now.second * 1000).toLong()))
             val dir = File(Storage.recordings(app), id)
@@ -132,6 +133,18 @@ class Recorder(private val app: TrainFusionApp) {
             busy = false
             starting = false
         }
+    }
+
+    private fun microphoneGranted() =
+        ContextCompat.checkSelfPermission(app, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+
+    /**
+     * Looks again at what was refused, without asking: at launch, and on coming back to the
+     * app (perhaps from Settings). What hasn't been asked yet doesn't count as refused.
+     * (Android has no permission for the barometer, so there's no Motion & Fitness to refuse.)
+     */
+    fun checkPermissions() {
+        microphoneDenied = app.settings.askedMicrophone && !microphoneGranted()
     }
 
     @JvmName("changeRide")  // (the property's own setter is setRide)

@@ -72,6 +72,9 @@ class MainActivity : ComponentActivity() {
             ride = e.getString("ride"),
             expandSensors = e.getBoolean("expandsensors"),
             account = e.getBoolean("account"),
+            record = e.getBoolean("record"),
+            openRide = e.getBoolean("openride"),
+            elsewhere = e.getBoolean("elsewhere"),
         )
     }
 }

@@ -7,7 +7,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -58,21 +57,16 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.danielkarp.trainfusion.core.inference.Belief
-import io.github.danielkarp.trainfusion.core.inference.modeNames
-import io.github.danielkarp.trainfusion.core.inference.phoneNames
+import io.github.danielkarp.trainfusion.core.recording.stationShortName
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
@@ -86,8 +80,8 @@ import kotlin.math.sin
 
 /**
  * What the model believes, for someone glancing at their phone on a train: what the train is
- * doing, where it is, where it has stopped, and how good the measurements behind that are.
- * The numbers are under "Details" (ios/TrainRecorder/BeliefView.swift).
+ * doing, where it is, where it has stopped, and how good the measurements behind that are
+ * (ios/TrainRecorder/BeliefView.swift).
  *
  * Every card keeps its size whether or not it has anything to show yet (a greyed-out
  * skeleton stands in), so the screen doesn't jump as fixes arrive.
@@ -95,23 +89,12 @@ import kotlin.math.sin
 @Composable
 fun BeliefView(belief: Belief?, start: Long?, message: String?, waiting: String, units: Units, expandSensors: Boolean = false) {
     val b = belief ?: Belief()
-    var showDetails by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (message != null) Text(message, style = MaterialTheme.typography.bodySmall, color = Palette.red)
         StatusCard(b, if (belief == null) waiting else null, units)
         PlaceCard(b, units)
         StopsCard(b, start)
         SensorRow(b, expandSensors)
-        if (belief != null) {
-            Column(Modifier.padding(horizontal = 4.dp)) {
-                Row(Modifier.fillMaxWidth().clickable { showDetails = !showDetails }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Details", style = MaterialTheme.typography.bodyMedium, color = Palette.secondary, modifier = Modifier.weight(1f))
-                    Icon(Icons.Filled.ExpandMore, contentDescription = null, tint = Palette.secondary,
-                        modifier = Modifier.rotate(if (showDetails) 180f else 0f))
-                }
-                AnimatedVisibility(showDetails) { Box(Modifier.padding(top = 8.dp)) { DetailsView(b) } }
-            }
-        }
     }
 }
 
@@ -359,14 +342,6 @@ private fun StationBar(place: Belief.Place, previous: String?, previousLeg: Doub
     }
 }
 
-/** The names that don't fit on a small screen, shortened. */
-fun stationShortName(name: String): String = mapOf(
-    "San Francisco 4th & King Street" to "San Francisco",
-    "South San Francisco" to "South SF",
-    "California Avenue" to "California Ave",
-    "San Jose Diridon" to "San Jose",
-)[name] ?: name
-
 /** The line from the last station to the next, with nothing on it yet. */
 @Composable
 private fun SegmentSkeleton() {
@@ -456,9 +431,9 @@ private fun SensorRow(belief: Belief, expandedAtFirst: Boolean) {
         val idle = if (b.stops > 0) "stopped" else "waiting"
         val reading = b.accelReading
         when {
-            phone != 0 -> add(SensorItem("Acceleration", Glyph.SPRING, gray, "needs phone still"))
+            phone != 0 -> add(SensorItem("Acceleration", Glyph.SPRING, gray, "phone moving"))
             reading != null -> add(SensorItem("Acceleration", Glyph.SPRING, green, "in use", String.format(Locale.US, "%+.2f m/s²", reading)))
-            else -> add(SensorItem("Acceleration", Glyph.SPRING, yellow, "finding forward"))
+            else -> add(SensorItem("Acceleration", Glyph.SPRING, yellow, "calibrating"))
         }
         val tone = b.toneEvidence
         when {
@@ -559,99 +534,4 @@ private fun massOnSpring(r: Rect): Path = Path().apply {
     lineTo(x1, y)
     val side = r.height * 0.56f
     addRoundRect(androidx.compose.ui.geometry.RoundRect(Rect(x1, y - side / 2, x1 + min(side, r.right - x1), y + side / 2), CornerRadius(side * 0.18f)))
-}
-
-/** Everything the model believes, as numbers: for the curious, and for debugging. */
-@Composable
-private fun DetailsView(b: Belief) {
-    val modeColors = listOf(Palette.gray, Palette.blue, Palette.orange, Palette.teal, Palette.yellow, Palette.pink)
-    val small = 13.sp
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Section("Speed") {
-            Text(String.format(Locale.US, "%.1f ± %.1f m/s (%.0f mph)", b.speedMean, b.speedSd, b.speedMean * 2.23694), fontSize = small, style = Mono)
-            SpeedDistribution(b, Modifier.fillMaxWidth().height(80.dp))
-        }
-        Section("What the train is doing") {
-            for (m in b.modeP.indices) ProbabilityBar(modeNames[m], b.modeP[m], modeColors[m])
-        }
-        Section("What the phone is doing") {
-            for (s in b.phoneP.indices) ProbabilityBar(phoneNames[s], b.phoneP[s], Palette.secondary)
-            Text(if (b.accelInUse) "Using the accelerometer for speed changes" else "Accelerometer not in use (needs a resting phone and one clear acceleration)",
-                fontSize = 12.sp, color = Palette.secondary)
-        }
-        Section("Stations") {
-            if (b.stations.isEmpty()) {
-                Text(if (b.stops == 0) "No door opening heard yet." else "One stop heard: every station is still possible.", fontSize = small, color = Palette.secondary)
-            } else {
-                for (s in b.stations) ProbabilityBar("${s.name} ${if (s.southbound) "↓" else "↑"}", s.p, Palette.blue)
-            }
-            Text(String.format(Locale.US, "%d stops heard · %.2f km since the last", b.stops, b.distanceSinceStop / 1000), fontSize = small, style = Mono)
-            if (b.stopLog.isNotEmpty()) {
-                Text("Door chimes, seconds into the recording (open / close): " + b.stopLog.joinToString(", ") { "${it.opened} / ${it.closed?.toString() ?: "–"}" },
-                    fontSize = 12.sp, style = Mono, color = Palette.secondary)
-            }
-            if (b.legs.isNotEmpty()) {
-                Text("Legs: " + b.legs.joinToString(", ") { String.format(Locale.US, "%.2f", it / 1000) } + " km", fontSize = 12.sp, style = Mono, color = Palette.secondary)
-            }
-        }
-        Text("${b.second / 60}:${String.format(Locale.US, "%02d", b.second % 60)} into the recording. Uses only what has been heard and felt so far; stops and stations are confirmed about 3 s after the door chime.",
-            fontSize = 12.sp, color = Palette.secondary)
-    }
-}
-
-@Composable
-private fun Section(title: String, content: @Composable () -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        Text(title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Palette.secondary)
-        content()
-    }
-}
-
-@Composable
-private fun ProbabilityBar(name: String, p: Double, color: Color) {
-    val track = Palette.gray4
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(name, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(150.dp))
-        Canvas(Modifier.weight(1f).height(7.dp)) {
-            drawRoundRect(track, cornerRadius = CornerRadius(size.height / 2))
-            val w = max(size.width * p.toFloat(), if (p > 0.005) 3.dp.toPx() else 0f)
-            if (w > 0) drawRoundRect(color, size = Size(w, size.height), cornerRadius = CornerRadius(size.height / 2))
-        }
-        Text(String.format(Locale.US, "%.2f", p), fontSize = 13.sp, style = Mono, color = Palette.secondary, textAlign = TextAlign.End, modifier = Modifier.width(36.dp))
-    }
-}
-
-/** P(speed) in 1 m/s bins, with the probability of standing as its own bar on the left. */
-@Composable
-private fun SpeedDistribution(b: Belief, modifier: Modifier) {
-    val measurer = rememberTextMeasurer()
-    val teal = Palette.teal
-    val blue = Palette.blue
-    val secondary = Palette.secondary
-    Canvas(modifier) {
-        val n = b.speedHist.size
-        if (n == 0) return@Canvas
-        val gap = 14.dp.toPx()
-        val labelH = 14.dp.toPx()
-        val w = (size.width - gap - 14.dp.toPx()) / n
-        val h = size.height - labelH
-        val top = maxOf(b.speedHist.maxOrNull() ?: 0f, b.pStanding.toFloat(), 0.05f)
-        fun rect(x: Float, p: Float, width: Float): Pair<Offset, Size> {
-            val bh = p / top * h
-            return Offset(x, h - bh) to Size(width, bh)
-        }
-        rect(0f, b.pStanding.toFloat(), 12.dp.toPx()).let { (o, s) -> drawRoundRect(teal, o, s, CornerRadius(2.dp.toPx())) }
-        for (k in 0 until n) {
-            rect(14.dp.toPx() + gap + k * w, b.speedHist[k], max(w - 1, 1f)).let { (o, s) -> drawRoundRect(blue, o, s, CornerRadius(1.5.dp.toPx())) }
-        }
-        drawLine(secondary.copy(alpha = 0.4f), Offset(0f, h), Offset(size.width, h), 0.5.dp.toPx())
-        label(measurer, "still", Offset(6.dp.toPx(), h + 8.dp.toPx()), secondary)
-        for (v in 0..30 step 10) label(measurer, "$v", Offset(14.dp.toPx() + gap + v * w, h + 8.dp.toPx()), secondary)
-        label(measurer, "m/s", Offset(size.width - 10.dp.toPx(), h + 8.dp.toPx()), secondary)
-    }
-}
-
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.label(measurer: TextMeasurer, text: String, centre: Offset, color: Color) {
-    val layout = measurer.measure(text, TextStyle(fontSize = 10.sp, color = color))
-    drawText(layout, topLeft = Offset(centre.x - layout.size.width / 2f, centre.y - layout.size.height / 2f))
 }

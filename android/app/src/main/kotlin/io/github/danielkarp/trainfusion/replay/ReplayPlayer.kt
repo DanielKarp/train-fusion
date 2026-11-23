@@ -28,7 +28,8 @@ import java.nio.ByteOrder
 
 /**
  * Plays an existing recording through the same engine, at a chosen speed, to try the model
- * without being on a train (ios/TrainRecorder/Inference/Drivers.swift's ReplayPlayer).
+ * without being on a train (ios/TrainRecorder/Inference/Drivers.swift's ReplayPlayer). The sample
+ * ride ([io.github.danielkarp.trainfusion.core.inference.SampleRide]) plays the same way.
  */
 class ReplayPlayer(private val app: TrainFusionApp) {
     var recording by mutableStateOf<Recording?>(null)  // what is loaded
@@ -62,7 +63,8 @@ class ReplayPlayer(private val app: TrainFusionApp) {
             val out = if (dump) File(Storage.replayDumps(app), "${recording.id}.jsonl").outputStream().buffered() else null
             try {
                 val model = SharedModel.get(app).getOrThrow()
-                Replay.run(recording.dir, model, { MediaAudioReader(it) }, control, out) { update ->
+                // the recording's files, or the generated sample ride
+                Replay.run(Replay.source(recording.dir, model) { MediaAudioReader(it) }, model, control, out) { update ->
                     withContext(Dispatchers.Main) {
                         if (this@ReplayPlayer.recording?.id != recording.id) return@withContext
                         if (update.restarted) store.reset()

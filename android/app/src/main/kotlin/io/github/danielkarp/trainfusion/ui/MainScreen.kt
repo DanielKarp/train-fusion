@@ -1,6 +1,32 @@
 package io.github.danielkarp.trainfusion.ui
 
 import android.Manifest
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.MicOff
+import androidx.compose.material.icons.outlined.Tram
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.unit.em
+import io.github.danielkarp.trainfusion.recording.Recorder
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -50,13 +76,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -65,7 +89,6 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -91,6 +114,9 @@ data class LaunchArgs(
     val ride: String? = null,  // trip,car,position
     val expandSensors: Boolean = false,
     val account: Boolean = false,
+    val record: Boolean = false,  // starts recording
+    val openRide: Boolean = false,  // History: the newest ride's screen
+    val elsewhere: Boolean = false,  // History: "Shared, not on this phone" open, and its newest ride's screen
 )
 
 enum class Tab { TRACK, RECORDINGS, SETTINGS }
@@ -108,12 +134,15 @@ fun MainScreen(app: TrainFusionApp, args: LaunchArgs, tabRequest: Tab?, onTabHan
     val recorder = app.recorder
     val store = app.store
     val replay = app.replay
+    /** The sample ride's recording, while it's on the phone. */
+    val sample = store.rides.firstOrNull { it.isSample }?.let { store.recordings[it.id] }
 
     LaunchedEffect(tabRequest) {
         if (tabRequest != null) { tab = tabRequest; onTabHandled() }
     }
     LaunchedEffect(Unit) {
         app.refresh()
+        recorder.checkPermissions()
         autoReplay(app, args)
         when (args.tab) { "history" -> tab = Tab.RECORDINGS; "settings" -> tab = Tab.SETTINGS }
         if (args.askUpload) store.rides.firstOrNull()?.let { app.consent = UploadConsent(it.id, store.recordings[it.id]?.bytes ?: 0, afterRide = true) }
@@ -121,17 +150,22 @@ fun MainScreen(app: TrainFusionApp, args: LaunchArgs, tabRequest: Tab?, onTabHan
     }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         app.refresh()
+        recorder.checkPermissions()
         store.resumeUploads()
-        scope.launch { store.sharePendingMeasurements() }
+        scope.launch {
+            store.sharePendingMeasurements()
+            store.syncSharing()
+        }
     }
     LaunchedEffect(app.account.signIns) { if (app.account.signIns > 0) app.offerAfterSignIn() }
 
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f)) {
             when (tab) {
-                Tab.TRACK -> TrackScreen(app, args)
-                Tab.RECORDINGS -> HistoryScreen(app, canReplay = !recorder.isRecording,
+                Tab.TRACK -> TrackScreen(app, args, sample, onPlay = { replay.play(it) })
+                Tab.RECORDINGS -> HistoryScreen(app, args, isRecording = recorder.isRecording, playing = replay.recording?.id,
                     onReplay = { recording -> replay.play(recording); tab = Tab.TRACK },
+                    onStopPlayback = { replay.exit() },
                     onUpload = { ride -> app.consent = UploadConsent(ride.id, store.recordings[ride.id]?.bytes ?: 0, afterRide = false) })
                 Tab.SETTINGS -> SettingsScreen(app, openAccount = args.account)
             }
@@ -156,16 +190,11 @@ fun MainScreen(app: TrainFusionApp, args: LaunchArgs, tabRequest: Tab?, onTabHan
             store.decide(request.rideID, answer.upload, app.protecting)
         }, onDismiss = { app.consent = null })
     }
-    app.unlinked?.let { found ->
-        val n = found.measurements + found.uploads
-        val parts = buildList {
-            if (found.measurements > 0) add(if (found.measurements == 1) "1 ride's Train Measurements" else "${found.measurements} rides' Train Measurements")
-            if (found.uploads > 0) add(if (found.uploads == 1) "1 full recording" else "${found.uploads} full recordings")
-        }.joinToString(" and ")
+    if (app.unlinked != null) {
         AlertDialog(
             onDismissRequest = { app.unlinked = null },
             title = { Text("Link to your account?") },
-            text = { Text("This phone shared $parts before you signed in. Link ${if (n == 1) "it" else "them"} to your account, so you'll be able to see ${if (n == 1) "it" else "them"} with it later?") },
+            text = { Text("Link what this phone shared before you signed in?") },
             confirmButton = { TextButton(onClick = { app.unlinked = null; app.linkToAccount() }) { Text("Link") } },
             dismissButton = { TextButton(onClick = { app.unlinked = null }) { Text("Not now") } },
         )
@@ -187,67 +216,87 @@ private suspend fun autoReplay(app: TrainFusionApp, args: LaunchArgs) {
     }
 }
 
-/** A thin header (record controls, or replay controls when a recording is being replayed) over the model's beliefs. */
+/**
+ * A thin header (the record button, with "Recording" and the time while recording; or
+ * replay controls when a recording is being played back) over the model's beliefs, or,
+ * with nothing going on, a word on how to start.
+ */
 @Composable
-private fun TrackScreen(app: TrainFusionApp, args: LaunchArgs) {
+private fun TrackScreen(app: TrainFusionApp, args: LaunchArgs, sample: Recording?, onPlay: (Recording) -> Unit) {
     val recorder = app.recorder
     val replay = app.replay
     val units = Units(app.settings.metricUnits)
     var editingRide by remember { mutableStateOf(args.editRide) }
     /** Asking about sharing Train Measurements, once the first recording has started. */
     var askingShare by remember { mutableStateOf(args.askShare) }
-    val scope = rememberCoroutineScope()
-
-    LaunchedEffect(Unit) {
-        // for screenshots from a computer: --es ride <trip>,<car>,<position>
-        val parts = args.ride?.split(",")
-        if (parts != null && parts.size == 3 && RideInfo.problem(parts[0], parts[1]) == null) {
-            RideInfo.Position.entries.firstOrNull { it.raw == parts[2] }?.let { recorder.setRide(RideInfo(parts[0].toInt(), parts[1].toInt(), it)) }
-        }
-    }
 
     // the microphone (and, on Android 13+, notifications: the one saying it's recording) before the first recording
     val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        app.settings.askedMicrophone = true
         app.scope.launch {  // (not the screen's scope: leaving the screen mustn't cancel it half way)
             recorder.start()
             // the first recording: ask while it runs (the answer applies when it ends)
             if (recorder.isRecording && !app.settings.askedShareMeasurements) askingShare = true
         }
     }
+    fun record() {
+        if (recorder.isRecording) {
+            app.scope.launch { recorder.stop() }
+        } else {
+            val wanted = buildList {
+                add(Manifest.permission.RECORD_AUDIO)
+                if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+            permissions.launch(wanted.toTypedArray())
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        // for screenshots from a computer: --es ride <trip>,<car>,<position>, --ez record true (starts recording)
+        val parts = args.ride?.split(",")
+        if (parts != null && parts.size == 3 && RideInfo.problem(parts[0], parts[1]) == null) {
+            RideInfo.Position.entries.firstOrNull { it.raw == parts[2] }?.let { recorder.setRide(RideInfo(parts[0].toInt(), parts[1].toInt(), it)) }
+        }
+        if (args.record && !recorder.isRecording) record()
+    }
 
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Box(Modifier.padding(horizontal = 16.dp)) {
             val recording = replay.recording
-            if (recording != null) ReplayHeader(app, recording) else RecordHeader(app, onEditRide = { editingRide = true }, onRecord = {
-                if (recorder.isRecording) {
-                    app.scope.launch { recorder.stop() }
-                } else {
-                    val wanted = buildList {
-                        add(Manifest.permission.RECORD_AUDIO)
-                        if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
-                    }
-                    permissions.launch(wanted.toTypedArray())
-                }
-            })
+            if (recording != null) ReplayHeader(app, recording) else RecordHeader(app, onRecord = { record() })
         }
         HorizontalDivider()
-        Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp).padding(bottom = 40.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            when {
-                replay.recording != null -> BeliefView(replay.store.belief, replay.recording?.started?.time, replay.store.message,
-                    "Loading the recording…", units, args.expandSensors)
-                recorder.isRecording -> {
+        val idle = replay.recording == null && !recorder.isRecording
+        // what was refused, and what it means: not in replay, which needs no permission
+        if (replay.recording == null && recorder.microphoneDenied) {
+            PermissionBanner(Icons.Outlined.MicOff, "Microphone access is off, so rides can't be recorded.")
+        }
+        // off a train, a way to see what the app does (nothing while the sample isn't on the phone)
+        if (idle && sample != null) {
+            FilledTonalButton(onClick = { onPlay(sample) }, enabled = !recorder.busy, shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 8.dp)) {
+                Icon(Icons.Filled.PlayArrow, null, tint = Palette.blue, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Not on train? Play sample ride", color = Palette.blue)
+            }
+        }
+        if (idle) {
+            Idle(recorder)
+        } else {
+            Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp).padding(bottom = 40.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                if (replay.recording != null) {
+                    BeliefView(replay.store.belief, replay.recording?.started?.time, replay.store.message,
+                        "Loading the recording…", units, args.expandSensors)
+                } else {
+                    TrainRow(recorder.ride, onClick = { editingRide = true })
                     BeliefView(recorder.inference.belief, recorder.startedAt, recorder.inference.message, "Listening…", units, args.expandSensors)
                     recorder.live.audio.error?.let { Text(it, fontSize = 13.sp, color = Palette.red) }
                 }
-                else -> Text(
-                    if (recorder.starting) "Starting…" else if (recorder.busy) "Saving…" else "Tap the red button to start measuring a ride.\nOr replay an earlier one from History.",
-                    style = MaterialTheme.typography.bodyLarge, color = Palette.secondary, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 40.dp),
-                )
+                recorder.error?.let { Text(it, fontSize = 13.sp, color = Palette.red, textAlign = TextAlign.Center) }
             }
-            recorder.error?.let { Text(it, fontSize = 13.sp, color = Palette.red, textAlign = TextAlign.Center) }
         }
     }
 
@@ -264,34 +313,91 @@ private fun TrackScreen(app: TrainFusionApp, args: LaunchArgs) {
     }
 }
 
+/** Nothing recording or playing: in the middle of the screen, how to start. */
 @Composable
-private fun RecordHeader(app: TrainFusionApp, onEditRide: () -> Unit, onRecord: () -> Unit) {
-    val recorder = app.recorder
-    Box(Modifier.fillMaxWidth().height(52.dp), contentAlignment = Alignment.Center) {
-        // in the middle whatever is on either side: the train this is, tap to edit
-        TextButton(onClick = onEditRide, modifier = Modifier.padding(horizontal = 62.dp)) {
-            val ride = recorder.ride
-            if (ride != null) {
-                // grey, not the button's colour: quiet once it's filled in
-                FitText("Trip ${ride.trip} · Car ${ride.car}" + if (ride.position == RideInfo.Position.UNSPECIFIED) "" else " · ${ride.position.raw}",
-                    15.sp, minScale = 0.7f, style = TextStyle(fontFeatureSettings = "tnum"), color = Palette.secondary)
-            } else {
-                FitText("Enter trip and car number", 15.sp, minScale = 0.7f, color = Palette.blue)
-            }
+private fun ColumnScope.Idle(recorder: Recorder) {
+    Column(Modifier.fillMaxWidth().weight(1f).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+        horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(Icons.Outlined.Tram, null, tint = Palette.tertiary, modifier = Modifier.size(72.dp))
+        val style = MaterialTheme.typography.titleLarge.copy(color = Palette.secondary, fontWeight = FontWeight.Normal, textAlign = TextAlign.Center)
+        if (recorder.starting || recorder.busy) {
+            Text(if (recorder.starting) "Starting…" else "Saving…", style = style)
+        } else {
+            // the button's own symbol, not its colour: readable whatever colours one sees
+            val symbol = mapOf("record" to InlineTextContent(Placeholder(1.1.em, 1.1.em, PlaceholderVerticalAlign.TextCenter)) {
+                Icon(Icons.Outlined.RadioButtonChecked, null, tint = Palette.secondary, modifier = Modifier.fillMaxSize())
+            })
+            Text(buildAnnotatedString { append("Tap "); appendInlineContent("record", "⦿"); append(" to start.") },
+                style = style, inlineContent = symbol, modifier = Modifier.semantics { contentDescription = "Tap the record button to start." })
         }
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            recorder.startedAt?.let { ElapsedTimer(it) }
-            Spacer(Modifier.weight(1f))
-            IconButton(onClick = onRecord, enabled = !recorder.busy) {
-                Icon(if (recorder.isRecording) Icons.Filled.StopCircle else Icons.Outlined.RadioButtonChecked,
-                    contentDescription = if (recorder.isRecording) "Stop recording" else "Start recording",
-                    tint = Palette.red, modifier = Modifier.size(34.dp))
-            }
+        recorder.error?.let { Text(it, fontSize = 13.sp, color = Palette.red, textAlign = TextAlign.Center) }
+    }
+}
+
+/** A permission that was refused: what that means, and Open Settings (the app's own page, where its switches are). */
+@Composable
+private fun PermissionBanner(icon: ImageVector, text: String) {
+    val context = LocalContext.current
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 8.dp)
+        .background(Palette.orange.copy(alpha = 0.12f), RoundedCornerShape(12.dp)).padding(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Icon(icon, null, tint = Palette.orange, modifier = Modifier.size(20.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(text, fontSize = 15.sp)
+            Text("Open Settings", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Palette.blue,
+                modifier = Modifier.clickable {
+                    context.startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.fromParts("package", context.packageName, null)))
+                })
         }
     }
 }
 
-/** Time since `startedMillis`, ticking: 0:12, 1:02:03 (SwiftUI's Text(_, style: .timer)). */
+/**
+ * The first row while recording: the train this is (typed in), tap to enter or edit. Blue,
+ * like a button, until it's filled in; plain text after (still tappable).
+ */
+@Composable
+private fun TrainRow(ride: RideInfo?, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Palette.card).clickable(onClick = onClick)
+        .padding(horizontal = 12.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Icon(Icons.Outlined.Tram, null, tint = if (ride == null) Palette.blue else Palette.secondary, modifier = Modifier.size(20.dp))
+        Box(Modifier.weight(1f)) {
+            if (ride != null) {
+                FitText("Trip ${ride.trip} · Car ${ride.car}" + if (ride.position == RideInfo.Position.UNSPECIFIED) "" else " · ${ride.position.raw}",
+                    15.sp, minScale = 0.7f, style = TextStyle(fontFeatureSettings = "tnum"))
+            } else {
+                FitText("Enter trip and car number", 15.sp, minScale = 0.7f, color = Palette.blue)
+            }
+        }
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Palette.tertiary, modifier = Modifier.size(20.dp))
+    }
+}
+
+@Composable
+private fun RecordHeader(app: TrainFusionApp, onRecord: () -> Unit) {
+    val recorder = app.recorder
+    Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        val started = recorder.startedAt
+        if (recorder.isRecording && started != null) {
+            Box(Modifier.size(8.dp).background(Palette.red, CircleShape))
+            Text("Recording", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            ElapsedTimer(started)
+        } else {
+            Box(Modifier.size(8.dp).background(Palette.gray2, CircleShape))
+            Text("Not recording", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Palette.secondary)
+            Text("00:00", fontSize = 15.sp, style = TextStyle(fontFeatureSettings = "tnum"), color = Palette.secondary)
+        }
+        Spacer(Modifier.weight(1f))
+        IconButton(onClick = onRecord, enabled = !recorder.busy) {
+            Icon(if (recorder.isRecording) Icons.Filled.StopCircle else Icons.Outlined.RadioButtonChecked,
+                contentDescription = if (recorder.isRecording) "Stop recording" else "Start recording",
+                tint = Palette.red, modifier = Modifier.size(34.dp))
+        }
+    }
+}
+
+/** Time since `startedMillis`, ticking: 00:07, 12:34, 1:02:03 (the same width from the start: the idle header shows 00:00). */
 @Composable
 private fun ElapsedTimer(startedMillis: Long) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -299,8 +405,8 @@ private fun ElapsedTimer(startedMillis: Long) {
         while (true) { now = System.currentTimeMillis(); delay(1000 - now % 1000) }
     }
     val s = ((now - startedMillis) / 1000).coerceAtLeast(0)
-    Text(if (s >= 3600) String.format(Locale.US, "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60) else String.format(Locale.US, "%d:%02d", s / 60, s % 60),
-        fontSize = 20.sp, style = TextStyle(fontFeatureSettings = "tnum"))
+    Text(if (s >= 3600) String.format(Locale.US, "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60) else String.format(Locale.US, "%02d:%02d", s / 60, s % 60),
+        fontSize = 15.sp, style = TextStyle(fontFeatureSettings = "tnum"), color = Palette.secondary)
 }
 
 @Composable

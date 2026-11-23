@@ -39,6 +39,11 @@ data class Ride(
     val sharedAt: Double? = null,
     /** To be shared as soon as possible (it ended with sharing on). */
     val sharePending: Boolean? = null,
+    /** What's shared is marked for deletion (the server says so; `RideStore.syncSharing`). Counts as not shared; sharing again from History undoes it. */
+    val measurementsDeletionRequested: Boolean? = null,
+    val recordingDeletionRequested: Boolean? = null,
+    /** The generated sample ride (`SampleRide`): plays back, is never shared. */
+    val sample: Boolean? = null,
 ) {
     @Serializable
     data class Stop(
@@ -63,15 +68,18 @@ data class Ride(
         @SerialName("tooLarge") TOO_LARGE,
     }
 
+    val isSample: Boolean get() = sample == true
     val settled: Boolean get() = upload == Upload.UPLOADED || upload == Upload.DECLINED || upload == Upload.TOO_LARGE
+    val measurementsShared: Boolean get() = sharedAt != null && measurementsDeletionRequested != true
+    val recordingShared: Boolean get() = upload == Upload.UPLOADED && recordingDeletionRequested != true
 
-    /** Where the model heard the ride start and end. */
+    /** Where the model heard the ride start and end, with the short station names. */
     val title: String
         get() {
-            val origin = stops.firstOrNull()?.station ?: return "Unknown trip"
-            val destination = if (stops.size > 1) stops.last().station else null
+            val origin = stops.firstOrNull()?.station?.let(::stationShortName) ?: return if (isSample) "Sample ride" else "Unknown ride"
+            val destination = if (stops.size > 1) stops.last().station?.let(::stationShortName) else null
             val sure = (stationConfidence ?: 0.0) > 0.9
-            return origin + (destination?.let { " → $it" } ?: "") + if (sure) "" else " (unsure)"
+            return (if (isSample) "Sample: " else "") + origin + (destination?.let { " → $it" } ?: "") + if (sure) "" else " (unsure)"
         }
 
     /** The body of PUT /v1/measurements/<id>. */
@@ -100,6 +108,32 @@ data class Ride(
 
         fun encodeList(rides: List<Ride>): String = json.encodeToString(ListSerializer(serializer()), rides)
         fun decodeList(text: String): List<Ride> = json.decodeFromString(ListSerializer(serializer()), text)
+
+        /** From what the server has (GET /v1/measurements), for a ride that isn't on the phone. */
+        fun fromServer(id: String, m: JsonObject): Ride {
+            var train: Train? = null
+            (m["train"] as? JsonObject)?.let { t ->
+                val trip = (t["trip_number"] as? JsonPrimitive)?.intOrNull
+                val car = (t["car_number"] as? JsonPrimitive)?.intOrNull
+                if (trip != null && car != null) train = Train(trip, car, (t["car_position"] as? JsonPrimitive)?.contentOrNull() ?: "unspecified")
+            }
+            val ended = m.num("ended_unix_s")
+            return Ride(
+                id = id,
+                started = m.num("started_unix_s"),
+                ended = ended,
+                stoppedProperly = ended != null,
+                appVersion = (m["app_version"] as? JsonPrimitive)?.contentOrNull(),
+                train = train,
+                direction = (m["direction"] as? JsonPrimitive)?.contentOrNull(),
+                stationConfidence = m.num("station_confidence"),
+                stops = ((m["stops"] as? JsonArray) ?: JsonArray(emptyList())).mapNotNull { e ->
+                    val s = e as? JsonObject ?: return@mapNotNull null
+                    val opened = s.num("doors_opened_unix_s") ?: return@mapNotNull null
+                    Stop((s["station"] as? JsonPrimitive)?.contentOrNull(), opened, s.num("doors_closed_unix_s"))
+                },
+            )
+        }
 
         /**
          * From a recording's meta.json, with its times converted from uptime to clock time
@@ -140,6 +174,7 @@ data class Ride(
                 ended = meta.num("ended_uptime_s")?.let(unix),
                 stoppedProperly = (meta["complete"] as? JsonPrimitive)?.booleanOrNull ?: false,
                 appVersion = (meta["app_version"] as? JsonPrimitive)?.contentOrNull(),
+                sample = if ((meta["sample"] as? JsonPrimitive)?.booleanOrNull == true) true else null,
                 train = train,
                 direction = direction,
                 stationConfidence = confidence,
@@ -167,9 +202,9 @@ data class Ride(
 
 /** How many recordings to keep on the phone (Settings). */
 enum class KeepRecordings(val raw: String, val label: String, val count: Int?) {
-    NONE("none", "Don't keep", 0),
-    LAST3("last3", "Keep last 3", 3),
-    ALL("all", "Keep all", null);
+    NONE("none", "None", 0),
+    LAST3("last3", "Last 3", 3),
+    ALL("all", "All", null);
 
     companion object {
         fun of(raw: String?) = entries.firstOrNull { it.raw == raw } ?: LAST3
@@ -208,6 +243,15 @@ data class RideInfo(val trip: Int, val car: Int, val position: Position) {
 private fun Double?.json(): JsonElement = this?.let(::JsonPrimitive) ?: JsonNull
 private fun JsonObject.num(key: String): Double? = (this[key] as? JsonPrimitive)?.doubleOrNull
 private fun JsonPrimitive.contentOrNull(): String? = if (this is JsonNull) null else content
+
+/** The names that don't fit on a small screen, shortened. */
+fun stationShortName(name: String): String = when (name) {
+    "San Francisco 4th & King Street" -> "San Francisco"
+    "South San Francisco" -> "South SF"
+    "California Avenue" -> "California Ave"
+    "San Jose Diridon" -> "San Jose"
+    else -> name
+}
 
 /** The most an upload may be, all its files together (the server enforces it too). */
 const val MAX_UPLOAD_BYTES = 200_000_000L

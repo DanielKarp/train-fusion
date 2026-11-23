@@ -127,11 +127,26 @@ class FeatureExtractor(model: Model) {
         feed(x, offset, count)
     }
 
+    /**
+     * Audio already at the model's rate (`fs`), straight after what came before: for
+     * generated audio (the sample ride), which needn't be made at 48 kHz to be decimated.
+     */
+    fun addAudio16k(x: FloatArray, offset: Int = 0, count: Int = x.size - offset) {
+        val before = a16.size
+        a16.append(x, offset, count)
+        fed48 += 3L * count
+        filterRumble(before)
+    }
+
     private fun feed(x: FloatArray, offset: Int, count: Int) {
         if (count <= 0) return
         fed48 += count
         val before = a16.size
         decimator.process(x, offset, count, a16)
+        filterRumble(before)
+    }
+
+    private fun filterRumble(before: Int) {
         for (i in before until a16.size) {
             val y = rumble.step(a16[i].toDouble())
             val sec = rumbleCount / fs

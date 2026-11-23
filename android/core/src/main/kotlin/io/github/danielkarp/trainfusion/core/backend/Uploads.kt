@@ -116,7 +116,7 @@ class Uploads(
             val status = try {
                 Http.putFile(file.url, file.headers, File(dir, file.name), { sent -> progress((before + minOf(sent, file.size)).toDouble() / total) })
             } catch (e: IOException) {
-                return UploadResult.Failed("Upload of ${file.name} failed (${e.message ?: "no connection"}). Tap to try again.", network = true)
+                return UploadResult.Failed("Sharing failed.", network = true)
             }
             if (status in 200..299 || status == 412) {  // 412: already there
                 job = job.copy(files = job.files.map { if (it.name == file.name) it.copy(done = true) else it })
@@ -124,7 +124,7 @@ class Uploads(
             } else {
                 // the URL was refused (e.g. expired): ask for new ones next time
                 if (status == 400 || status == 403) jobs[id] = null
-                return UploadResult.Failed("Upload of ${file.name} failed (HTTP $status). Tap to try again.")
+                return UploadResult.Failed("Sharing failed.")
             }
         }
         return try {
@@ -137,9 +137,9 @@ class Uploads(
             if (e.code == "incomplete") {
                 // start over with fresh URLs next time (files that are there answer 412)
                 jobs[id] = null
-                UploadResult.Failed("The upload didn't arrive complete. Tap to try again.")
+                UploadResult.Failed("Sharing didn't finish.")
             } else {
-                UploadResult.Failed("Couldn't finish the upload: ${e.message}", network = e.status == 0)
+                UploadResult.Failed("Sharing didn't finish.", network = e.status == 0)
             }
         }
     }

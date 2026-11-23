@@ -12,7 +12,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.doubleOrNull
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -81,34 +80,32 @@ object Replay {
         return Meta(t0, name, audioStart, ended - t0)
     }
 
+    /** Whether the recording in `dir` is the generated sample ride (its meta.json says so). */
+    fun isSample(dir: File): Boolean = try {
+        (Json.parseToJsonElement(File(dir, "meta.json").readText()).jsonObject["sample"] as? JsonPrimitive)?.content == "true"
+    } catch (_: Exception) {
+        false
+    }
+
+    /** What to replay `dir` from: the sample ride's generator, or the recording's files (audio opened with `openAudio`). */
+    fun source(dir: File, model: Model, openAudio: (File) -> AudioReader): ReplaySource =
+        if (isSample(dir)) SampleRide(model) else FileSource(dir, openAudio)
+
     /**
      * Runs until cancelled: plays to the end at the control's speed, obeys its commands,
      * and at the end waits for more. The model only runs forwards, so going back means
      * starting over and running flat out to the place (a whole ride takes a few seconds).
-     * `openAudio` opens the recording's (first) audio segment.
      */
     suspend fun run(
-        dir: File,
+        source: ReplaySource,
         model: Model,
-        openAudio: (File) -> AudioReader,
         control: ReplayControl,
         dump: OutputStream?,
         report: suspend (Update) -> Unit,
     ) {
-        val meta = meta(dir)
-        val t0 = meta.t0
-        val accel = GzipCsv.read(File(dir, "accel.csv.gz"), intArrayOf(0, 1, 2, 3))
-        val gyro = GzipCsv.read(File(dir, "gyro.csv.gz"), intArrayOf(0, 1, 2, 3))
-        val baro = GzipCsv.read(File(dir, "baro.csv.gz"), intArrayOf(0, 1))
-        val fused = GzipCsv.read(File(dir, "device_motion.csv.gz"), intArrayOf(0, 1, 2, 3, 4, 8, 9, 10))
-
-        var audio = openAudio(File(dir, meta.audioFile))
         try {
-            if (audio.sampleRate != 48000) throw Failure("Replay needs 48 kHz audio.")
-            val buffer = FloatArray(48000)
-            val chunk = FloatArray(48000)
+            val duration = source.duration
             var engine = InferenceEngine(model)
-            var ia = 0; var ig = 0; var ib = 0; var ifu = 0
             var second = 0
             val unsent = ArrayList<Belief>()
             var restarted = false
@@ -118,9 +115,8 @@ object Replay {
 
             fun restart() {
                 engine = InferenceEngine(model)
-                audio.close()
-                audio = openAudio(File(dir, meta.audioFile))
-                ia = 0; ig = 0; ib = 0; ifu = 0; second = 0; stops = 0
+                source.rewind()
+                second = 0; stops = 0
                 unsent.clear()
                 restarted = true
             }
@@ -137,7 +133,7 @@ object Replay {
                     ReplayControl.Command.RESTART -> { restart(); target = null }
                     null -> {}
                 }
-                if (second >= meta.duration) {  // the end: say so, and wait for a command
+                if (second >= duration) {  // the end: say so, and wait for a command
                     target = null
                     report(Update(unsent.toList(), second, restarted, atEnd = true))
                     unsent.clear(); restarted = false
@@ -148,30 +144,7 @@ object Replay {
                     continue
                 }
                 val tick = System.nanoTime()
-                val f = engine.features
-                // one second of every stream
-                var got = 0
-                while (got < 48000) {
-                    val k = audio.read(chunk, 48000 - got)
-                    if (k <= 0) break
-                    System.arraycopy(chunk, 0, buffer, got, k)
-                    got += k
-                }
-                if (got > 0) f.addAudio48k(buffer, 0, got, if (second == 0) meta.audioStart - t0 else null)
-                val until = t0 + second + 1
-                while (ia < accel.size / 4 && accel[4 * ia] < until) {
-                    f.addAccel(accel[4 * ia] - t0, Vec3(accel[4 * ia + 1], accel[4 * ia + 2], accel[4 * ia + 3])); ia += 1
-                }
-                while (ig < gyro.size / 4 && gyro[4 * ig] < until) {
-                    f.addGyro(gyro[4 * ig] - t0, Vec3(gyro[4 * ig + 1], gyro[4 * ig + 2], gyro[4 * ig + 3])); ig += 1
-                }
-                while (ib < baro.size / 2 && baro[2 * ib] < until) { f.addBaro(baro[2 * ib] - t0, baro[2 * ib + 1]); ib += 1 }
-                while (ifu < fused.size / 8 && fused[8 * ifu] < until) {
-                    val r = 8 * ifu
-                    f.addAttitude(fused[r] - t0, Quat(fused[r + 1], fused[r + 2], fused[r + 3], fused[r + 4]),
-                        Vec3(fused[r + 5], fused[r + 6], fused[r + 7]))
-                    ifu += 1
-                }
+                source.feed(second, engine.features)
                 second += 1
 
                 while (true) {
@@ -207,7 +180,7 @@ object Replay {
                 }
             }
         } finally {
-            audio.close()
+            source.close()
             dump?.flush()
         }
     }
@@ -249,6 +222,72 @@ object Replay {
     }
 
     private fun nums(a: DoubleArray) = buildJsonArray { a.forEach { add(JsonPrimitive(it)) } }
+}
+
+/** Where a replay's sensor streams come from: a recording's files, or the sample ride. */
+interface ReplaySource : java.io.Closeable {
+    /** Seconds. */
+    val duration: Double
+
+    /** Feed one second of every stream (seconds are asked for in order from 0, and again from 0 after `rewind`). */
+    fun feed(second: Int, f: FeatureExtractor)
+    fun rewind()
+    override fun close() {}
+}
+
+/** A recording's files: its (first) audio segment, opened with `openAudio`, and the sensors' .csv.gz. */
+class FileSource(private val dir: File, private val openAudio: (File) -> AudioReader) : ReplaySource {
+    private val meta = Replay.meta(dir)
+    override val duration = meta.duration
+    private val t0 = meta.t0
+    private val accel = GzipCsv.read(File(dir, "accel.csv.gz"), intArrayOf(0, 1, 2, 3))
+    private val gyro = GzipCsv.read(File(dir, "gyro.csv.gz"), intArrayOf(0, 1, 2, 3))
+    private val baro = GzipCsv.read(File(dir, "baro.csv.gz"), intArrayOf(0, 1))
+    private val fused = GzipCsv.read(File(dir, "device_motion.csv.gz"), intArrayOf(0, 1, 2, 3, 4, 8, 9, 10))
+    private var audio = openAudio(File(dir, meta.audioFile))
+    private var ia = 0; private var ig = 0; private var ib = 0; private var ifu = 0
+    private val buffer = FloatArray(48000)
+    private val chunk = FloatArray(48000)
+
+    init {
+        if (audio.sampleRate != 48000) {
+            audio.close()
+            throw Replay.Failure("Replay needs 48 kHz audio.")
+        }
+    }
+
+    override fun rewind() {
+        audio.close()
+        audio = openAudio(File(dir, meta.audioFile))
+        ia = 0; ig = 0; ib = 0; ifu = 0
+    }
+
+    override fun feed(second: Int, f: FeatureExtractor) {
+        var got = 0
+        while (got < 48000) {
+            val k = audio.read(chunk, 48000 - got)
+            if (k <= 0) break
+            System.arraycopy(chunk, 0, buffer, got, k)
+            got += k
+        }
+        if (got > 0) f.addAudio48k(buffer, 0, got, if (second == 0) meta.audioStart - t0 else null)
+        val until = t0 + second + 1
+        while (ia < accel.size / 4 && accel[4 * ia] < until) {
+            f.addAccel(accel[4 * ia] - t0, Vec3(accel[4 * ia + 1], accel[4 * ia + 2], accel[4 * ia + 3])); ia += 1
+        }
+        while (ig < gyro.size / 4 && gyro[4 * ig] < until) {
+            f.addGyro(gyro[4 * ig] - t0, Vec3(gyro[4 * ig + 1], gyro[4 * ig + 2], gyro[4 * ig + 3])); ig += 1
+        }
+        while (ib < baro.size / 2 && baro[2 * ib] < until) { f.addBaro(baro[2 * ib] - t0, baro[2 * ib + 1]); ib += 1 }
+        while (ifu < fused.size / 8 && fused[8 * ifu] < until) {
+            val r = 8 * ifu
+            f.addAttitude(fused[r] - t0, Quat(fused[r + 1], fused[r + 2], fused[r + 3], fused[r + 4]),
+                Vec3(fused[r + 5], fused[r + 6], fused[r + 7]))
+            ifu += 1
+        }
+    }
+
+    override fun close() = audio.close()
 }
 
 private fun JsonPrimitive.contentOrNullSafe(): String? = if (this is JsonNull) null else content

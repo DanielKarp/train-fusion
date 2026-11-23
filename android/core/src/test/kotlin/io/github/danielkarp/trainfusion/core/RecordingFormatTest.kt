@@ -73,6 +73,10 @@ class RecordingFormatTest {
         assertEquals("980 KB", formatBytes(980_000))
         assertEquals("45.2 MB", formatBytes(45_234_567))
         assertEquals("200 MB", formatBytes(200_000_000))
+        assertEquals("You already have an account with a@example.com. Sign in with Apple and Google, as you did before.",
+            io.github.danielkarp.trainfusion.core.backend.Identity.alreadyRegistered("a@example.com", listOf("google.com", "apple.com", "google.com")))
+        assertEquals("You already have an account with this email. Sign in the way you did before.",
+            io.github.danielkarp.trainfusion.core.backend.Identity.alreadyRegistered(null, listOf("phone")))
         assertEquals("1.2 GB", formatBytes(1_200_000_000))
         assertEquals("1.23 GB", formatBytes(1_234_000_000))
     }
@@ -122,7 +126,11 @@ class RecordingFormatTest {
         assertEquals(312, body["train"]!!.jsonObject["car_number"]!!.jsonPrimitive.content.toInt())
         // and it survives rides.json
         assertEquals(listOf(ride), Ride.decodeList(Ride.encodeList(listOf(ride))))
-        assertEquals("Unknown trip", Ride("x").title)
+        assertEquals("Unknown ride", Ride("x").title)
+        assertEquals("Sample ride", Ride("x", sample = true).title)
+        // the short names, as History shows them
+        assertEquals("San Francisco → San Jose", Ride("x", stationConfidence = 0.95,
+            stops = listOf(Ride.Stop("San Francisco 4th & King Street", 1.0), Ride.Stop("San Jose Diridon", 2.0))).title)
         assertEquals("A (unsure)", Ride("x", stops = listOf(Ride.Stop("A", 1.0)), stationConfidence = 0.5).title)
         dir.deleteRecursively()
     }

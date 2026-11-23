@@ -96,7 +96,20 @@ class BackendClientTest {
             assertEquals("deletion_pending", e.code)
             assertEquals(409, e.status)
         }
-        assertEquals(2, api.call("POST", "v1/uploads/deletion-request", auth = Api.Auth.IF_SIGNED_IN, device = true)["requested"]!!.jsonPrimitive.int)
+        // shared again by asking (History's Share): unmarked
+        api.call("PUT", "v1/measurements/${ride.id}", ride.apiBody(), Api.Auth.IF_SIGNED_IN, device = true, query = mapOf("undo_deletion" to "true"))
+        assertTrue(api.call("GET", "v1/measurements", device = true)["measurements"]!!.jsonArray.none { (it as JsonObject).bool("deletion_requested") == true })
+        // one ride's measurements, one recording's uploads (History's Unshare)
+        assertEquals(0, api.call("POST", "v1/measurements/deletion-request", auth = Api.Auth.IF_SIGNED_IN, device = true,
+            query = mapOf("ride_id" to "20000101T000000Z"))["requested"]!!.jsonPrimitive.int)
+        assertEquals(1, api.call("POST", "v1/measurements/deletion-request", auth = Api.Auth.IF_SIGNED_IN, device = true,
+            query = mapOf("ride_id" to ride.id))["requested"]!!.jsonPrimitive.int)
+        assertEquals(1, api.call("POST", "v1/uploads/deletion-request", auth = Api.Auth.IF_SIGNED_IN, device = true,
+            query = mapOf("recording_id" to dir.name))["requested"]!!.jsonPrimitive.int)
+        val marked = api.call("GET", "v1/uploads", device = true)["uploads"]!!.jsonArray.map { it as JsonObject }
+        assertEquals(listOf(dir.name), marked.filter { it.bool("deletion_requested") == true }.map { it.string("recording_id") })
+        // the rest
+        assertEquals(1, api.call("POST", "v1/uploads/deletion-request", auth = Api.Auth.IF_SIGNED_IN, device = true)["requested"]!!.jsonPrimitive.int)
 
         // deleting the account
         val deleted = api.call("DELETE", "v1/account", auth = Api.Auth.REQUIRED)

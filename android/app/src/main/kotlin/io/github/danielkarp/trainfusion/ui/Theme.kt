@@ -27,6 +27,7 @@ object Palette {
     val background @Composable @ReadOnlyComposable get() = pick(dark, 0xFFFFFFFF, 0xFF000000)
     val groupedBackground @Composable @ReadOnlyComposable get() = pick(dark, 0xFFF2F2F7, 0xFF000000)
     val secondary @Composable @ReadOnlyComposable get() = pick(dark, 0x993C3C43, 0x99EBEBF5)
+    val tertiary @Composable @ReadOnlyComposable get() = pick(dark, 0x4C3C3C43, 0x4CEBEBF5)
     val separator @Composable @ReadOnlyComposable get() = pick(dark, 0x4A3C3C43, 0x99545458)
 }
 

@@ -119,7 +119,7 @@ class Uploader(private val app: TrainFusionApp) {
                 val at = (result.retryAt * 1000).toLong()
                 retryAt[id] = at
                 val time = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(at))
-                states[id] = State.Waiting("Today's upload limit has been reached. It will upload after $time.")
+                states[id] = State.Waiting("Daily limit reached; retries $time")
                 // (on iOS it's retried when the app is next opened after that; here, at that time)
                 enqueue(id, delayMillis = at - System.currentTimeMillis() + 5000, policy = ExistingWorkPolicy.APPEND_OR_REPLACE)
             }

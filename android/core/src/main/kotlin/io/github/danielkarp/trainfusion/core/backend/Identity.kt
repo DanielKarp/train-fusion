@@ -34,10 +34,21 @@ class Identity(private val apiKey: String?, private val platformHeaders: Map<Str
 
     class Refreshed(val idToken: String, val refreshToken: String, val expiresIn: Double)
 
-    fun signInWithIdp(postBody: String): Tokens = Tokens.from(post("accounts:signInWithIdp", buildJsonObject {
-        put("postBody", postBody); put("requestUri", "http://localhost")
-        put("returnSecureToken", true); put("returnIdpCredential", true)
-    }))
+    fun signInWithIdp(postBody: String): Tokens {
+        val body = post("accounts:signInWithIdp", buildJsonObject {
+            put("postBody", postBody); put("requestUri", "http://localhost")
+            put("returnSecureToken", true); put("returnIdpCredential", true)
+        })
+        // One account per email: signing in another way with an email that already has an
+        // account answers this, with no tokens, rather than signing in. (Linking the new way
+        // to the account would mean signing in the old way first; not done yet.)
+        if (body.bool("needConfirmation") == true) {
+            val providers = (body["verifiedProvider"] as? kotlinx.serialization.json.JsonArray)
+                ?.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content } ?: emptyList()
+            throw Failure(alreadyRegistered(body.string("email"), providers), "NEED_CONFIRMATION")
+        }
+        return Tokens.from(body)
+    }
 
     /** Emails a sign-in link that, through the backend's /auth/email-link page, comes back to the app. */
     fun sendEmailLink(email: String, continueUrl: String) {
@@ -85,9 +96,32 @@ class Identity(private val apiKey: String?, private val platformHeaders: Map<Str
         fun describe(code: String, raw: String) = when (code) {
             "EXPIRED_OOB_CODE", "INVALID_OOB_CODE" -> "This sign-in link has expired or was already used. Ask for a new one."
             "INVALID_EMAIL" -> "That doesn't look like an email address."
+            "EMAIL_EXISTS" -> alreadyRegistered(null, emptyList())
             "USER_DISABLED" -> "This account has been disabled."
             "TOKEN_EXPIRED", "USER_NOT_FOUND", "INVALID_REFRESH_TOKEN" -> "the account's sign-in is no longer valid."
             else -> "Sign-in failed ($raw)."
+        }
+
+        /** For an email that already has an account: say so, and how it signed in if we know. */
+        fun alreadyRegistered(email: String?, providers: List<String>): String {
+            val ways = providers.mapNotNull {
+                when (it) {
+                    "apple.com" -> "Apple"
+                    "google.com" -> "Google"
+                    "emailLink", "password" -> "an email link"
+                    else -> null
+                }
+            }.toSortedSet().toList()
+            val account = email?.let { "You already have an account with $it." } ?: "You already have an account with this email."
+            val how = if (ways.isEmpty()) "Sign in the way you did before." else "Sign in with ${list(ways)}, as you did before."
+            return "$account $how"
+        }
+
+        /** "A", "A and B", "A, B, and C" (as iOS's ListFormatter in English). */
+        private fun list(items: List<String>): String = when (items.size) {
+            1 -> items[0]
+            2 -> "${items[0]} and ${items[1]}"
+            else -> items.dropLast(1).joinToString(", ") + ", and " + items.last()
         }
 
         fun form(fields: Map<String, String>): ByteArray =

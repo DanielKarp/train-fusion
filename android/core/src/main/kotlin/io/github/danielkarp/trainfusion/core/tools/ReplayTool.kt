@@ -41,7 +41,7 @@ fun replayToFile(dir: File, model: Model, out: File): Int {
         out.outputStream().buffered().use { dump ->
             val control = ReplayControl().apply { speed = null }
             try {
-                Replay.run(dir, model, { FfmpegAudioReader(it) }, control, dump) { update ->
+                Replay.run(Replay.source(dir, model) { FfmpegAudioReader(it) }, model, control, dump) { update ->
                     last = update.second
                     if (update.atEnd) throw Done()
                 }

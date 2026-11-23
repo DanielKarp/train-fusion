@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Records audio to sense the train. Recordings stay on the phone unless you choose to upload one. -->
+    <!-- Records audio to sense the train. Recordings stay on the phone unless you choose to share one. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Recording carries on with the app in the background and the phone locked: a foreground
          service (with its notification) and a wake lock, as iOS's audio background mode. -->
