@@ -7,7 +7,7 @@ options:
 settings:
   base:
     MARKETING_VERSION: "0.1"
-    CURRENT_PROJECT_VERSION: "1"
+    CURRENT_PROJECT_VERSION: "2"
     SWIFT_VERSION: "5.0"
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: 4Q3J7GB2S8
@@ -15,7 +15,11 @@ targets:
   TrainRecorder:
     type: application
     platform: iOS
-    sources: [TrainRecorder]
+    sources:
+      - path: TrainRecorder
+        # the key older builds uploaded with (infra/recordings.tf): nothing uses it now, and
+        # anything in a build can be extracted from it, so never bundle it
+        excludes: [uploader-key.json]
     # Where the backend is, and the Identity Platform settings: Config.xcconfig (gitignored,
     # from `just ios-config`). Without it the app records and replays but can't upload or sign in.
     configFiles:
@@ -41,8 +45,8 @@ targets:
         # Recording keeps the app running when backgrounded or locked.
         # Uploads finish in a background URL session, which needs no background mode.
         UIBackgroundModes: [audio]
-        NSMicrophoneUsageDescription: Records audio to sense the train. Recordings stay on your phone unless you choose to upload one.
-        NSMotionUsageDescription: Records motion and barometer to sense the train. Recordings stay on your phone unless you choose to upload one.
+        NSMicrophoneUsageDescription: Records audio to sense the train. Recordings stay on your phone unless you choose to share one.
+        NSMotionUsageDescription: Records motion and barometer to sense the train. Recordings stay on your phone unless you choose to share one.
         # from Config.xcconfig (Backend.swift)
         TRBackendHost: $(API_HOST)
         TRIdentityAPIKey: $(IDENTITY_API_KEY)

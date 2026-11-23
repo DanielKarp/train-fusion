@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreMotion
 import Observation
 import UIKit
 
@@ -15,8 +16,8 @@ struct RideInfo: Equatable {
     /// trip and car numbers change with the timetable and the fleet.
     static func problem(trip: String, car: String) -> String? {
         let digits = { (text: String) in !text.isEmpty && text.allSatisfy { $0.isASCII && $0.isNumber } }
-        guard digits(trip), trip.count == 3, "1459".contains(trip.first!) else {
-            return "A trip number has 3 digits and starts with 1, 4, 5 or 9."
+        guard digits(trip), trip.count == 3, "14569".contains(trip.first!) else {
+            return "A trip number has 3 digits and starts with 1, 4, 5, 6 or 9."
         }
         guard digits(car), car.count == 3 || car.count == 4, car.first == "3" else {
             return "A car number has 3 or 4 digits and starts with 3."
@@ -46,6 +47,11 @@ final class Recorder {
     private(set) var busy = false  // starting or stopping
     private(set) var starting = false  // asking for permissions, starting the sensors
     var error: String?
+    /// Microphone access was refused: nothing can be recorded (the Measure screen says so,
+    /// with a way to Settings).
+    private(set) var microphoneDenied = false
+    /// Motion & Fitness access was refused: recordings work, without the barometer.
+    private(set) var motionDenied = false
     /// Trip and car of the recording in progress (or, typed in before starting, of the
     /// next one). Set with `setRide`.
     private(set) var ride: RideInfo?
@@ -77,13 +83,11 @@ final class Recorder {
         (busy, starting) = (true, true)
         defer { (busy, starting) = (false, false) }
         error = nil
-        guard await AVAudioApplication.requestRecordPermission() else {
-            error = "Microphone access is off. Turn it on in Settings › Train Fusion."
-            return
-        }
+        microphoneDenied = !(await AVAudioApplication.requestRecordPermission())
+        guard !microphoneDenied else { return }
         // Wait for the Motion & Fitness answer too, so the recording starts only once both
         // questions are out of the way. Without it there's no barometer, but it records.
-        _ = await MotionCapture.requestPermission()
+        motionDenied = !(await MotionCapture.requestPermission())
 
         let now = Clock.now()
         let id = RecordingID.make(Date(timeIntervalSince1970: now.unix))
@@ -123,6 +127,14 @@ final class Recorder {
         poll = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.refreshLive() }
         }
+    }
+
+    /// Looks again at what was refused, without asking: at launch, and on coming back to
+    /// the app (perhaps from Settings). What hasn't been asked yet doesn't count as refused.
+    func checkPermissions() {
+        microphoneDenied = AVAudioApplication.shared.recordPermission == .denied
+        motionDenied = CMAltimeter.isRelativeAltitudeAvailable()
+            && [.denied, .restricted].contains(CMAltimeter.authorizationStatus())
     }
 
     func setRide(_ ride: RideInfo?) {
