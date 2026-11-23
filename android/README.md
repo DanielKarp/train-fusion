@@ -218,7 +218,8 @@ What can't be replicated cleanly, and what the Android app does instead:
 - **Smaller things:** the testing launch arguments are intent extras
   (`adb shell am start … --es autoreplay <id> --es replayspeed max --ez dump true`); a
   privacy manifest has no Android equivalent (Play's Data safety form is filled in on the
-  console); `app_version` is `0.1-android (<version code>)`, so shared data says which app,
+  console); trip numbers may start with 6 (weekend locals), which the iOS app refuses (a
+  bug there); `app_version` is `0.1-android (<version code>)`, so shared data says which app,
   and which build, made it; crashes are written to a file for testers
   ([When it crashes](#when-it-crashes)), where the iOS app relies on Apple's crash logs.
 

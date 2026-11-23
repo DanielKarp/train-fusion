@@ -81,7 +81,12 @@ class RecordingFormatTest {
     fun rideInfoProblems() {
         assertNull(RideInfo.problem("123", "312"))
         assertNull(RideInfo.problem("901", "3012"))
+        assertNull(RideInfo.problem("401", "312"))  // limited
+        assertNull(RideInfo.problem("502", "312"))  // express
+        assertNull(RideInfo.problem("601", "312"))  // weekend local
+        assertNotNull(RideInfo.problem("805", "312"))  // South County: outside the project
         assertNotNull(RideInfo.problem("223", "312"))
+        assertNotNull(RideInfo.problem("312", "312"))  // a car number in the trip's place
         assertNotNull(RideInfo.problem("12", "312"))
         assertNotNull(RideInfo.problem("123", "412"))
         assertNotNull(RideInfo.problem("１２３", "312"))  // not ASCII digits

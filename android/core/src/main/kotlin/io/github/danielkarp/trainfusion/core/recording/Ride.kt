@@ -185,12 +185,20 @@ data class RideInfo(val trip: Int, val car: Int, val position: Position) {
 
     companion object {
         /**
+         * How the timetable's trip numbers start: 1 local (weekdays), 4 limited, 5 express,
+         * 6 local (weekends); and 9, which the iOS app allows too. (The iOS app has "1459",
+         * which refuses weekend locals.) Not 8: South County trains are outside the project.
+         * Not 3: car numbers start with 3, so a car number typed as the trip is still caught.
+         */
+        private const val TRIP_FIRST_DIGITS = "14569"
+
+        /**
          * What's wrong with what was typed, or null. Deliberately loose: the exact sets of
          * trip and car numbers change with the timetable and the fleet.
          */
         fun problem(trip: String, car: String): String? {
             fun digits(text: String) = text.isNotEmpty() && text.all { it in '0'..'9' }
-            if (!digits(trip) || trip.length != 3 || trip[0] !in "1459") return "A trip number has 3 digits and starts with 1, 4, 5 or 9."
+            if (!digits(trip) || trip.length != 3 || trip[0] !in TRIP_FIRST_DIGITS) return "A trip number has 3 digits and starts with 1, 4, 5, 6 or 9."
             if (!digits(car) || (car.length != 3 && car.length != 4) || car[0] != '3') return "A car number has 3 or 4 digits and starts with 3."
             return null
         }

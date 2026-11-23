@@ -29,7 +29,7 @@ android {
         applicationId = "io.github.danielkarp.trainfusion"
         minSdk = 29
         targetSdk = 36
-        versionCode = 2
+        versionCode = 3
         // "-android": meta.json and Train Measurements say which app made them
         versionName = "0.1-android"
         buildConfigField("String", "API_HOST", "\"${config("API_HOST")}\"")

@@ -28,7 +28,7 @@ import kotlin.random.Random
  * sharing measurements, uploading a recording, accounts, linking, deletion requests.
  */
 class BackendClientTest {
-    private val base: String? = System.getenv("TRAIN_FUSION_TEST_BACKEND")
+    private val base: String? = System.getenv("TRAIN_FUSION_TEST_BACKEND")?.takeIf { it.isNotBlank() }  // (the build passes "" when unset)
     private val device = "t" + Random.nextLong().toULong().toString(36).padEnd(40, 'x')
     private var token: String? = null
     private val api by lazy { Api(base, { device }, { token }) }
